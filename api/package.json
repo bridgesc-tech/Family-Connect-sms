@@ -1,0 +1,10 @@
+{
+  "name": "family-connect-sms-api",
+  "version": "1.0.0",
+  "description": "Serverless function for email-to-SMS reminders",
+  "main": "send-reminder.js",
+  "dependencies": {
+    "@sendgrid/mail": "^7.7.0"
+  }
+}
+
