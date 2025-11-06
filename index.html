@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#667eea">
+    <title>Family Connect</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍👩‍👧‍👦</text></svg>">
+    <link rel="manifest" href="manifest.json" onerror="this.remove()">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="apple-touch-icon" href="icon-192.png" onerror="this.remove()">
+    
+    <!-- Firebase SDKs (only loads if not file:// protocol) -->
+    <script>
+        if (window.location.protocol !== 'file:') {
+            const script1 = document.createElement('script');
+            script1.src = 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js';
+            
+            script1.onload = () => {
+                const script2 = document.createElement('script');
+                script2.src = 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js';
+                
+                script2.onload = () => {
+                    const configScript = document.createElement('script');
+                    configScript.src = 'firebase-config.js';
+                    document.head.appendChild(configScript);
+                };
+                document.head.appendChild(script2);
+            };
+            document.head.appendChild(script1);
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>👨‍👩‍👧‍👦 Family Connect</h1>
+            <p class="subtitle">Calendar & Shared To-Do List</p>
+            <div id="syncStatus" style="margin-top: 10px; font-size: 14px; color: white; text-align: center; font-weight: 500; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);"></div>
+        </header>
+
+        <!-- Tab Navigation -->
+        <div class="tab-navigation">
+            <button class="tab-btn active" data-tab="glance">👁️ Glance</button>
+            <button class="tab-btn" data-tab="calendar">📅 Calendar</button>
+            <button class="tab-btn" data-tab="tasks">✅ Tasks</button>
+            <button class="tab-btn" data-tab="groceries">🛒 Groceries</button>
+        </div>
+
+        <!-- Glance Tab -->
+        <div class="tab-content active" id="glanceTab">
+            <div class="glance-options">
+                <button class="glance-option-btn active" data-period="day">Day at a Glance</button>
+                <button class="glance-option-btn" data-period="week">Week at a Glance</button>
+                <button class="glance-option-btn" data-period="month">Month at a Glance</button>
+            </div>
+            <div class="glance-content" id="glanceContent">
+                <!-- Glance content will be dynamically generated -->
+            </div>
+        </div>
+
+        <!-- Calendar Tab -->
+        <div class="tab-content" id="calendarTab">
+            <div class="calendar-header">
+                <button class="nav-btn" id="prevMonth">‹</button>
+                <h2 id="currentMonth"></h2>
+                <button class="nav-btn" id="nextMonth">›</button>
+            </div>
+            <div class="calendar-grid" id="calendarGrid">
+                <!-- Calendar will be dynamically generated -->
+            </div>
+        </div>
+
+        <!-- Tasks Tab -->
+        <div class="tab-content" id="tasksTab">
+            <div class="add-task-section" style="margin-bottom: 20px;">
+                <button class="btn btn-primary add-btn" id="addTaskBtn" style="width: 100%;">➕ Add Task</button>
+            </div>
+            <div class="tasks-list" id="tasksList">
+                <!-- Tasks will be dynamically added here -->
+            </div>
+            <div class="empty-state" id="emptyTasksState" style="display: none;">
+                <p>📝 No tasks yet.</p>
+                <p>Add your first task above!</p>
+            </div>
+        </div>
+
+        <!-- Groceries Tab -->
+        <div class="tab-content" id="groceriesTab">
+            <div class="add-grocery-section" style="margin-bottom: 20px;">
+                <div class="input-group" style="display: flex; gap: 10px;">
+                    <input type="text" id="groceryItemInput" placeholder="Enter grocery item..." maxlength="100" style="flex: 1; padding: 12px 16px; border: 2px solid var(--border-color); border-radius: 8px; font-size: 16px;">
+                    <button class="btn btn-primary" id="addGroceryBtn">➕ Add</button>
+                </div>
+            </div>
+            <div class="groceries-list" id="groceriesList">
+                <!-- Groceries will be dynamically added here -->
+            </div>
+            <div class="empty-state" id="emptyGroceriesState" style="display: none;">
+                <p>🛒 No groceries yet.</p>
+                <p>Add your first item above!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Day Events Modal (View Events for a Day) -->
+    <div class="modal" id="dayEventsModal">
+        <div class="modal-content">
+            <span class="close" id="closeDayEventsModal">&times;</span>
+            <h2 id="dayEventsModalTitle">Events</h2>
+            <div class="modal-body">
+                <div class="events-list" id="dayEventsList">
+                    <!-- Events will be dynamically added here -->
+                </div>
+                <div class="empty-state" id="emptyDayEvents" style="display: none; padding: 20px; text-align: center; color: var(--text-secondary);">
+                    <p>No events for this day</p>
+                </div>
+                <button id="addEventToDayBtn" class="btn btn-primary" style="width: 100%; margin-top: 20px;">➕ Add Event to This Day</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Event Modal -->
+    <div class="modal" id="eventModal">
+        <div class="modal-content">
+            <span class="close" id="closeEventModal">&times;</span>
+            <h2 id="eventModalTitle">Add Event</h2>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="eventTitleInput">Event Title:</label>
+                    <input type="text" id="eventTitleInput" placeholder="Enter event title" maxlength="50">
+                </div>
+                <div class="form-group">
+                    <label for="eventDateInput">Date:</label>
+                    <input type="date" id="eventDateInput" style="cursor: pointer;">
+                </div>
+                <div class="form-group">
+                    <label>Time (optional):</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <select id="eventHourInput" style="flex: 1;">
+                            <option value="">Hour</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
+                            <option value="8">8</option>
+                            <option value="9">9</option>
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                        </select>
+                        <span style="font-size: 18px;">:</span>
+                        <select id="eventMinuteInput" style="flex: 1;">
+                            <option value="">Min</option>
+                            <option value="00">00</option>
+                            <option value="15">15</option>
+                            <option value="30">30</option>
+                            <option value="45">45</option>
+                        </select>
+                        <select id="eventAmPmInput" style="flex: 1;">
+                            <option value="">AM/PM</option>
+                            <option value="AM">AM</option>
+                            <option value="PM">PM</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="eventDescriptionInput">Description (optional):</label>
+                    <textarea id="eventDescriptionInput" placeholder="Add event details..." maxlength="200" rows="3"></textarea>
+                </div>
+                
+                <!-- Reminder Settings -->
+                <div class="reminder-section" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color);">
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="eventRemindersEnabled" style="width: auto;">
+                            <span>Enable SMS Reminders</span>
+                        </label>
+                    </div>
+                    <div id="eventReminderOptions" style="display: none; margin-top: 15px;">
+                        <div class="form-group">
+                            <label>Remind Me:</label>
+                            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="reminder-time-checkbox" value="1 day before" style="width: auto;">
+                                    <span>1 day before</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="reminder-time-checkbox" value="2 hours before" style="width: auto;">
+                                    <span>2 hours before</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="reminder-time-checkbox" value="1 hour before" style="width: auto;">
+                                    <span>1 hour before</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="reminder-time-checkbox" value="30 minutes before" style="width: auto;">
+                                    <span>30 min before</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="reminder-time-checkbox" value="15 minutes before" style="width: auto;">
+                                    <span>15 min before</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Notify Family Members:</label>
+                            <div id="eventReminderMembers" style="margin-top: 8px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+                                <!-- Members with phones will be listed here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Send Reminder Now Section (shown when editing) -->
+                <div id="eventSendNowSection" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color);">
+                    <div class="form-group">
+                        <label>Send Reminder Now To:</label>
+                        <div id="eventSendNowMembers" style="margin-top: 8px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+                            <!-- Members with phones will be listed here -->
+                        </div>
+                    </div>
+                    <button id="sendEventReminderBtn" class="btn btn-secondary" style="width: 100%; margin-top: 10px;">📱 Send Reminder Now</button>
+                </div>
+                
+                <button id="saveEventBtn" class="btn btn-primary">Save Event</button>
+                <button id="deleteEventBtn" class="btn btn-danger" style="display: none;">Delete Event</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Task Modal -->
+    <div class="modal" id="taskModal">
+        <div class="modal-content">
+            <span class="close" id="closeTaskModal">&times;</span>
+            <h2 id="taskModalTitle">Add Task</h2>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="taskTitleInput">Task Title:</label>
+                    <input type="text" id="taskTitleInput" placeholder="Enter task title" maxlength="50">
+                </div>
+                <div class="form-group">
+                    <label for="taskAssigneeInput">Assign To:</label>
+                    <select id="taskAssigneeInput">
+                        <option value="">Unassigned</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="taskDueDateInput">Due Date (optional):</label>
+                    <input type="date" id="taskDueDateInput" style="cursor: pointer;">
+                </div>
+                <div class="form-group">
+                    <label>Due Time (optional):</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                        <select id="taskDueHourInput" style="flex: 1;">
+                            <option value="">Hour</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
+                            <option value="8">8</option>
+                            <option value="9">9</option>
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                        </select>
+                        <span style="font-size: 18px;">:</span>
+                        <select id="taskDueMinuteInput" style="flex: 1;">
+                            <option value="">Min</option>
+                            <option value="00">00</option>
+                            <option value="15">15</option>
+                            <option value="30">30</option>
+                            <option value="45">45</option>
+                        </select>
+                        <select id="taskDueAmPmInput" style="flex: 1;">
+                            <option value="">AM/PM</option>
+                            <option value="AM">AM</option>
+                            <option value="PM">PM</option>
+                        </select>
+                    </div>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">Set a time for more accurate reminders</p>
+                </div>
+                <div class="form-group">
+                    <label for="taskDescriptionInput">Description (optional):</label>
+                    <textarea id="taskDescriptionInput" placeholder="Add task details..." maxlength="200" rows="3"></textarea>
+                </div>
+                
+                <!-- Reminder Settings -->
+                <div class="reminder-section" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color);">
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="taskRemindersEnabled" style="width: auto;">
+                            <span>Enable SMS Reminders</span>
+                        </label>
+                    </div>
+                    <div id="taskReminderOptions" style="display: none; margin-top: 15px;">
+                        <div class="form-group">
+                            <label>Remind Me:</label>
+                            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="task-reminder-time-checkbox" value="1 day before" style="width: auto;">
+                                    <span>1 day before</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="task-reminder-time-checkbox" value="2 hours before" style="width: auto;">
+                                    <span>2 hours before</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="task-reminder-time-checkbox" value="1 hour before" style="width: auto;">
+                                    <span>1 hour before</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="task-reminder-time-checkbox" value="30 minutes before" style="width: auto;">
+                                    <span>30 min before</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                    <input type="checkbox" class="task-reminder-time-checkbox" value="15 minutes before" style="width: auto;">
+                                    <span>15 min before</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Notify Family Members:</label>
+                            <div id="taskReminderMembers" style="margin-top: 8px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+                                <!-- Members with phones will be listed here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Send Reminder Now Section (shown when editing) -->
+                <div id="taskSendNowSection" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color);">
+                    <div class="form-group">
+                        <label>Send Reminder Now To:</label>
+                        <div id="taskSendNowMembers" style="margin-top: 8px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+                            <!-- Members with phones will be listed here -->
+                        </div>
+                    </div>
+                    <button id="sendTaskReminderBtn" class="btn btn-secondary" style="width: 100%; margin-top: 10px;">📱 Send Reminder Now</button>
+                </div>
+                
+                <button id="saveTaskBtn" class="btn btn-primary">Save Task</button>
+                <button id="deleteTaskBtn" class="btn btn-danger" style="display: none;">Delete Task</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Family Members Modal -->
+    <div class="modal" id="membersModal">
+        <div class="modal-content">
+            <span class="close" id="closeMembersModal">&times;</span>
+            <h2>Family Members</h2>
+            <div class="modal-body">
+                <p style="font-size: 14px; color: #7F8C8D; margin-bottom: 15px;">Add family members to assign tasks</p>
+                <div class="members-list" id="membersList">
+                    <!-- Members will be dynamically added here -->
+                </div>
+                <div class="add-member-section" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color);">
+                    <div class="form-group">
+                        <label for="memberNameInput">Member Name:</label>
+                        <div class="input-group">
+                            <input type="text" id="memberNameInput" placeholder="Enter name" maxlength="30">
+                            <button id="addMemberBtn" class="btn btn-primary">Add</button>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top: 15px;">
+                        <label for="memberPhoneInput">Phone Number (optional):</label>
+                        <input type="tel" id="memberPhoneInput" placeholder="1234567890" maxlength="10" pattern="[0-9]{10}">
+                    </div>
+                    <div class="form-group">
+                        <label for="memberCarrierInput">Carrier (optional):</label>
+                        <select id="memberCarrierInput">
+                            <option value="">Select carrier</option>
+                            <option value="att">AT&T</option>
+                            <option value="verizon">Verizon</option>
+                            <option value="tmobile">T-Mobile</option>
+                            <option value="sprint">Sprint</option>
+                            <option value="uscellular">US Cellular</option>
+                            <option value="cricket">Cricket</option>
+                            <option value="boost">Boost Mobile</option>
+                            <option value="metropcs">MetroPCS</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <span class="close" id="closeSettingsModal">&times;</span>
+            <h2>App Settings</h2>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="vercelUrlInput">Vercel Function URL:</label>
+                    <input type="url" id="vercelUrlInput" placeholder="https://your-project.vercel.app/api/send-reminder">
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">Enter your Vercel serverless function URL for SMS reminders</p>
+                </div>
+                <div class="form-group">
+                    <label for="apiKeyInput">API Key (optional):</label>
+                    <input type="text" id="apiKeyInput" placeholder="Leave empty if not using API key protection">
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">If your Vercel function requires an API key</p>
+                </div>
+                <button id="saveSettingsBtn" class="btn btn-primary" style="width: 100%;">Save Settings</button>
+                <button id="testConnectionBtn" class="btn btn-secondary" style="width: 100%; margin-top: 10px;">Test Connection</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Family Sync Button (Fixed at bottom) -->
+    <button id="openFamilyModalBtn" class="family-sync-button" title="Family Sync Settings">🔗</button>
+    <button id="openSettingsModalBtn" class="family-sync-button" style="bottom: 90px;" title="App Settings">⚙️</button>
+
+    <!-- Family Sync Modal -->
+    <div class="modal" id="familyModal">
+        <div class="modal-content">
+            <span class="close" id="closeFamilyModal">&times;</span>
+            <h2>Family Sync ID</h2>
+            <div class="modal-body">
+                <p style="font-size: 14px; color: #7F8C8D; margin-bottom: 15px;">Share this ID with other devices to sync data</p>
+                <div class="family-id-display">
+                    <input type="text" id="familyIdDisplay" readonly value="" style="flex: 1; padding: 10px; border: 2px solid var(--border-color); border-radius: 8px; font-size: 14px; font-family: monospace; background: #F5F7FA;">
+                    <button id="copyFamilyIdBtn" class="btn btn-primary" style="padding: 10px 20px; margin-left: 10px;">Copy</button>
+                </div>
+                <div class="family-id-input" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color);">
+                    <label for="familyIdInput" style="display: block; font-size: 14px; margin-bottom: 10px; color: #2C3E50; font-weight: 600;">Connect to existing family:</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="familyIdInput" placeholder="Enter 6-digit family ID" maxlength="6" pattern="[0-9]{6}" style="flex: 1; padding: 10px; border: 2px solid var(--border-color); border-radius: 8px; font-size: 14px;">
+                        <button id="setFamilyIdBtn" class="btn btn-secondary" style="padding: 10px 20px;">Connect</button>
+                    </div>
+                </div>
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color);">
+                    <button id="openMembersModalBtn" class="btn btn-secondary" style="width: 100%; padding: 12px;">👥 Manage Family Members</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
