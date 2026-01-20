@@ -1,5 +1,5 @@
 // Update this version number when you deploy a new version
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.2.0';
 const CACHE_NAME = `family-connect-${APP_VERSION}`;
 const urlsToCache = [
   './',
