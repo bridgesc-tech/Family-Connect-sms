@@ -23,18 +23,8 @@ A mobile web app for family calendar and shared to-do list management. Keep your
 - See all events and tasks in one view
 - Quick overview of upcoming activities
 
-### 📱 SMS Reminders
-- **Email-to-SMS reminders** via Vercel serverless functions
-- Set reminders for events and tasks
-- Multiple reminder times (15 min, 1 hour, 1 day before, etc.)
-- Send reminders to selected family members
-- Manual "Send Now" button for immediate reminders
-- Automatic scheduled reminders
-- See [REMINDER_SETUP.md](REMINDER_SETUP.md) for setup instructions
-
 ### 👥 Family Members
 - Add family members to assign tasks
-- Add phone numbers and carriers for SMS reminders
 - Manage family member list
 - Sync across all devices
 
@@ -90,13 +80,6 @@ The app uses the same Firebase project as TV Time Manager. No additional configu
 5. **Completing Tasks:**
    - Click the checkbox next to any task to mark it complete
    - Click on a task to edit or delete it
-
-6. **Setting Up SMS Reminders:**
-   - See [REMINDER_SETUP.md](REMINDER_SETUP.md) for detailed instructions
-   - Create SendGrid account (free)
-   - Deploy Vercel serverless function
-   - Add phone numbers to family members
-   - Enable reminders on events/tasks
 
 ## Technical Details
 

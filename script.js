@@ -5,6 +5,8 @@ class FamilyConnect {
         this.tasks = [];
         this.groceries = [];
         this.members = [];
+        this.weekDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        this.weekMenu = this.emptyWeekMenu();
         this.firebaseEnabled = false;
         this.familyId = this.getOrCreateFamilyId();
         this.currentDate = new Date();
@@ -12,11 +14,14 @@ class FamilyConnect {
         this.currentYear = this.currentDate.getFullYear();
         this.editingEventId = null;
         this.editingTaskId = null;
-        this.glancePeriod = 'day'; // 'day', 'week', or 'month'
-        this.scheduledReminders = [];
-        this.reminderCheckInterval = null;
-        this.vercelUrl = localStorage.getItem('familyConnectVercelUrl') || '';
-        this.apiKey = localStorage.getItem('familyConnectApiKey') || '';
+        this.glancePeriod = 'day';
+        this.currentTab = 'glance';
+        this.taskFilter = 'all';
+        this.saveTimer = null;
+        this.memberColors = ['#5B6CFF', '#14B8A6', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
+        ['familyConnectVercelUrl', 'familyConnectApiKey', 'familyConnectDailyDigest', 'familyConnectScheduledReminders'].forEach((key) => {
+            localStorage.removeItem(key);
+        });
         
         // Wait for Firebase scripts to load
         this.waitForFirebase(() => {
@@ -63,37 +68,16 @@ class FamilyConnect {
                         if (docSnapshot.exists) {
                             const data = docSnapshot.data();
                             
-                            if (data.events) {
-                                this.events = data.events;
-                                this.saveToLocalStorage();
-                                this.renderCalendar();
-                                this.renderGlance();
-                            }
-                            
-                            if (data.tasks) {
-                                this.tasks = data.tasks;
-                                this.saveToLocalStorage();
-                                this.renderTasks();
-                                this.renderGlance();
-                            }
-                            
-                            if (data.groceries) {
-                                this.groceries = data.groceries;
-                                this.saveToLocalStorage();
-                                this.renderGroceries();
-                            }
-                            
-                            if (data.members) {
-                                this.members = data.members;
-                                this.saveToLocalStorage();
-                                this.updateMemberSelects();
-                            }
-                            
-                            if (data.scheduledReminders) {
-                                this.scheduledReminders = data.scheduledReminders;
-                                localStorage.setItem('familyConnectScheduledReminders', JSON.stringify(this.scheduledReminders));
-                            }
-                            
+                            if (data.events) this.events = data.events;
+                            if (data.tasks) this.tasks = data.tasks;
+                            if (data.groceries) this.groceries = data.groceries;
+                            if (data.members) this.members = data.members;
+                            if (data.weekMenu) this.weekMenu = this.normalizeWeekMenu(data.weekMenu);
+                            this.ensureMemberColors();
+                            this.saveToLocalStorage();
+                            this.refreshVisible();
+                            this.updateMemberSelects();
+                            this.renderTaskFilters();
                             console.log('Synced from cloud');
                         }
                     }, (error) => {
@@ -126,6 +110,8 @@ class FamilyConnect {
                     this.tasks = data.tasks || [];
                     this.groceries = data.groceries || [];
                     this.members = data.members || [];
+                    this.weekMenu = this.normalizeWeekMenu(data.weekMenu);
+                    this.ensureMemberColors();
                     this.saveToLocalStorage();
                     return;
                 }
@@ -139,36 +125,44 @@ class FamilyConnect {
         const storedTasks = localStorage.getItem('familyConnectTasks');
         const storedGroceries = localStorage.getItem('familyConnectGroceries');
         const storedMembers = localStorage.getItem('familyConnectMembers');
-        const storedReminders = localStorage.getItem('familyConnectScheduledReminders');
-        
+        const storedMenu = localStorage.getItem('familyConnectWeekMenu');
         this.events = storedEvents ? JSON.parse(storedEvents) : [];
         this.tasks = storedTasks ? JSON.parse(storedTasks) : [];
         this.groceries = storedGroceries ? JSON.parse(storedGroceries) : [];
         this.members = storedMembers ? JSON.parse(storedMembers) : [];
-        this.scheduledReminders = storedReminders ? JSON.parse(storedReminders) : [];
+        this.weekMenu = this.normalizeWeekMenu(storedMenu ? JSON.parse(storedMenu) : null);
+        this.ensureMemberColors();
     }
 
     saveData() {
-        // Always save to localStorage first
         this.saveToLocalStorage();
-        
-        // Then sync to Firebase
-        if (this.firebaseEnabled) {
-            db.collection('families').doc(this.familyId).set({
-                events: this.events,
-                tasks: this.tasks,
-                groceries: this.groceries,
-                members: this.members,
-                scheduledReminders: this.scheduledReminders,
-                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-            }, { merge: true })
+        if (!this.firebaseEnabled) return;
+        clearTimeout(this.saveTimer);
+        this.saveTimer = setTimeout(() => this.flushSave(), 400);
+    }
+
+    flushSave() {
+        this.events = this.events.map(({ reminders, ...event }) => event);
+        this.tasks = this.tasks.map(({ reminders, ...task }) => task);
+        const payload = {
+            events: this.events,
+            tasks: this.tasks,
+            groceries: this.groceries,
+            members: this.members,
+            weekMenu: this.weekMenu,
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        if (firebase.firestore.FieldValue && firebase.firestore.FieldValue.delete) {
+            payload.scheduledReminders = firebase.firestore.FieldValue.delete();
+            payload.dailyDigest = firebase.firestore.FieldValue.delete();
+        }
+        db.collection('families').doc(this.familyId).set(payload, { merge: true })
             .then(() => {
                 console.log('Synced to cloud');
             })
             .catch((error) => {
                 console.error('Error syncing to Firebase:', error);
             });
-        }
     }
 
     saveToLocalStorage() {
@@ -176,6 +170,7 @@ class FamilyConnect {
         localStorage.setItem('familyConnectTasks', JSON.stringify(this.tasks));
         localStorage.setItem('familyConnectGroceries', JSON.stringify(this.groceries));
         localStorage.setItem('familyConnectMembers', JSON.stringify(this.members));
+        localStorage.setItem('familyConnectWeekMenu', JSON.stringify(this.weekMenu));
     }
 
     initializeApp() {
@@ -187,16 +182,12 @@ class FamilyConnect {
         this.setupCalendar();
         this.setupTasks();
         this.setupGroceries();
+        this.setupMenu();
         this.setupGlance();
         this.setupModals();
-        this.renderCalendar();
-        this.renderTasks();
-        this.renderGroceries();
-        this.renderGlance();
         this.updateMemberSelects();
-        this.setupReminderHandlers();
-        this.loadScheduledReminders();
-        this.startReminderChecker();
+        this.renderTaskFilters();
+        this.refreshVisible();
         
         // Setup date inputs to prevent typing but allow calendar
         this.setupDateInputs();
@@ -254,28 +245,30 @@ class FamilyConnect {
     }
 
     setupTabNavigation() {
-        const tabBtns = document.querySelectorAll('.tab-btn');
+        const tabBtns = document.querySelectorAll('.nav-item');
         const tabContents = document.querySelectorAll('.tab-content');
         
         tabBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 const targetTab = btn.getAttribute('data-tab');
+                this.currentTab = targetTab;
                 
-                // Update active states
                 tabBtns.forEach(b => b.classList.remove('active'));
                 tabContents.forEach(c => c.classList.remove('active'));
                 
                 btn.classList.add('active');
                 document.getElementById(targetTab + 'Tab').classList.add('active');
-                
-                // Refresh views when switching to them
-                if (targetTab === 'glance') {
-                    this.renderGlance();
-                } else if (targetTab === 'groceries') {
-                    this.renderGroceries();
-                }
+                this.refreshVisible();
             });
         });
+    }
+
+    refreshVisible() {
+        if (this.currentTab === 'glance') this.renderGlance();
+        else if (this.currentTab === 'calendar') this.renderCalendar();
+        else if (this.currentTab === 'tasks') this.renderTasks();
+        else if (this.currentTab === 'groceries') this.renderGroceries();
+        else if (this.currentTab === 'menu') this.renderMenu();
     }
 
     setupCalendar() {
@@ -296,7 +289,13 @@ class FamilyConnect {
             }
             this.renderCalendar();
         });
-        
+
+        document.getElementById('todayBtn').addEventListener('click', () => {
+            const today = new Date();
+            this.currentMonth = today.getMonth();
+            this.currentYear = today.getFullYear();
+            this.renderCalendar();
+        });
     }
 
     setupTasks() {
@@ -318,16 +317,89 @@ class FamilyConnect {
                 this.addGrocery();
             }
         });
+
+        document.getElementById('clearCheckedBtn').addEventListener('click', () => {
+            this.clearCheckedGroceries();
+        });
+    }
+
+    emptyWeekMenu() {
+        return {
+            sunday: '',
+            monday: '',
+            tuesday: '',
+            wednesday: '',
+            thursday: '',
+            friday: '',
+            saturday: ''
+        };
+    }
+
+    normalizeWeekMenu(data) {
+        const menu = this.emptyWeekMenu();
+        if (!data || typeof data !== 'object') return menu;
+        this.weekDays.forEach((day) => {
+            if (typeof data[day] === 'string') menu[day] = data[day];
+        });
+        return menu;
+    }
+
+    getCurrentWeekDates() {
+        const today = this.startOfDay(new Date());
+        const sunday = new Date(today);
+        sunday.setDate(today.getDate() - today.getDay());
+        return this.weekDays.map((day, index) => {
+            const date = new Date(sunday);
+            date.setDate(sunday.getDate() + index);
+            return { day, date };
+        });
+    }
+
+    setupMenu() {
+        this.weekDays.forEach((day) => {
+            const input = document.getElementById(`menu-${day}`);
+            if (!input) return;
+            input.addEventListener('input', () => {
+                this.weekMenu[day] = input.value;
+                this.saveData();
+            });
+        });
+
+        document.getElementById('clearMenuBtn').addEventListener('click', () => {
+            if (!this.weekDays.some((day) => this.weekMenu[day].trim())) return;
+            if (!confirm('Clear dinners for every day this week?')) return;
+            this.weekMenu = this.emptyWeekMenu();
+            this.saveData();
+            this.renderMenu();
+        });
+    }
+
+    renderMenu() {
+        const week = this.getCurrentWeekDates();
+        const rangeEl = document.getElementById('menuWeekRange');
+        if (rangeEl && week.length === 7) {
+            rangeEl.textContent = `${this.formatDateShort(week[0].date)} – ${this.formatDateShort(week[6].date)}`;
+        }
+
+        const todayKey = this.weekDays[new Date().getDay()];
+        week.forEach(({ day, date }) => {
+            const row = document.querySelector(`.menu-day[data-day="${day}"]`);
+            const dateLabel = document.querySelector(`[data-date-for="${day}"]`);
+            const input = document.getElementById(`menu-${day}`);
+            if (row) row.classList.toggle('is-today', day === todayKey);
+            if (dateLabel) dateLabel.textContent = this.formatDateShort(date);
+            if (input && document.activeElement !== input) {
+                input.value = this.weekMenu[day] || '';
+            }
+        });
     }
 
     setupGlance() {
-        const glanceBtns = document.querySelectorAll('.glance-option-btn');
+        const glanceBtns = document.querySelectorAll('.segmented-btn');
         glanceBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                // Update active states
                 glanceBtns.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                
                 this.glancePeriod = btn.getAttribute('data-period');
                 this.renderGlance();
             });
@@ -374,18 +446,16 @@ class FamilyConnect {
             this.deleteTask();
         });
         
-        // Family Sync Modal
-        document.getElementById('openFamilyModalBtn').addEventListener('click', () => {
-            this.openFamilyModal();
+        document.getElementById('openMoreBtn').addEventListener('click', () => {
+            this.openMoreModal();
         });
         
-        document.getElementById('closeFamilyModal').addEventListener('click', () => {
-            this.closeFamilyModal();
+        document.getElementById('closeMoreModal').addEventListener('click', () => {
+            this.closeMoreModal();
         });
         
-        // Members Modal
         document.getElementById('openMembersModalBtn').addEventListener('click', () => {
-            this.closeFamilyModal();
+            this.closeMoreModal();
             setTimeout(() => {
                 this.openMembersModal();
             }, 300);
@@ -398,27 +468,12 @@ class FamilyConnect {
         document.getElementById('addMemberBtn').addEventListener('click', () => {
             this.addMember();
         });
-        
-        // Settings Modal
-        document.getElementById('openSettingsModalBtn').addEventListener('click', () => {
-            this.openSettingsModal();
+        document.getElementById('memberNameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.addMember();
         });
         
-        document.getElementById('closeSettingsModal').addEventListener('click', () => {
-            this.closeSettingsModal();
-        });
-        
-        document.getElementById('saveSettingsBtn').addEventListener('click', () => {
-            this.saveSettings();
-        });
-        
-        document.getElementById('testConnectionBtn').addEventListener('click', () => {
-            this.testConnection();
-        });
-        
-        // Close modals when clicking outside
         window.addEventListener('click', (e) => {
-            const modals = ['dayEventsModal', 'eventModal', 'taskModal', 'familyModal', 'membersModal', 'settingsModal'];
+            const modals = ['dayEventsModal', 'eventModal', 'taskModal', 'moreModal', 'membersModal'];
             modals.forEach(modalId => {
                 const modal = document.getElementById(modalId);
                 if (e.target === modal) {
@@ -428,34 +483,6 @@ class FamilyConnect {
                     }
                 }
             });
-        });
-    }
-
-    setupReminderHandlers() {
-        // Event reminder handlers
-        document.getElementById('eventRemindersEnabled').addEventListener('change', (e) => {
-            const options = document.getElementById('eventReminderOptions');
-            options.style.display = e.target.checked ? 'block' : 'none';
-            if (e.target.checked) {
-                this.updateReminderMembersList('event');
-            }
-        });
-        
-        document.getElementById('sendEventReminderBtn').addEventListener('click', () => {
-            this.sendReminderNow('event', this.editingEventId);
-        });
-        
-        // Task reminder handlers
-        document.getElementById('taskRemindersEnabled').addEventListener('change', (e) => {
-            const options = document.getElementById('taskReminderOptions');
-            options.style.display = e.target.checked ? 'block' : 'none';
-            if (e.target.checked) {
-                this.updateReminderMembersList('task');
-            }
-        });
-        
-        document.getElementById('sendTaskReminderBtn').addEventListener('click', () => {
-            this.sendReminderNow('task', this.editingTaskId);
         });
     }
 
@@ -509,26 +536,16 @@ class FamilyConnect {
             dayNumber.textContent = day;
             dayElement.appendChild(dayNumber);
             
-            // Add event indicators
-            const dayEvents = this.events.filter(event => {
-                return this.isSameDate(event.date, dayDate);
-            });
+            const dayEvents = this.getEventsForDate(dayDate);
             
             if (dayEvents.length > 0) {
                 const eventsContainer = document.createElement('div');
                 eventsContainer.className = 'calendar-day-events';
                 dayEvents.forEach((event, index) => {
-                    if (index < 3) { // Show max 3 dots
+                    if (index < 3) {
                         const dot = document.createElement('span');
                         dot.className = 'event-dot';
-                        // Color based on event type or priority
-                        if (event.priority === 'high') {
-                            dot.classList.add('danger');
-                        } else if (event.priority === 'medium') {
-                            dot.classList.add('warning');
-                        } else {
-                            dot.classList.add('primary');
-                        }
+                        dot.style.background = this.getMemberColor(event.assignee);
                         eventsContainer.appendChild(dot);
                     }
                 });
@@ -562,16 +579,17 @@ class FamilyConnect {
         
         tasksList.innerHTML = '';
         
-        if (this.tasks.length === 0) {
+        const visibleTasks = this.getFilteredTasks();
+        if (visibleTasks.length === 0) {
             emptyState.style.display = 'block';
+            emptyState.querySelector('p').textContent = this.tasks.length === 0 ? 'No tasks yet' : 'No tasks match this filter';
             return;
         }
         
         emptyState.style.display = 'none';
         
-        // Separate completed and uncompleted tasks
-        const uncompletedTasks = this.tasks.filter(t => !t.completed);
-        const completedTasks = this.tasks.filter(t => t.completed);
+        const uncompletedTasks = visibleTasks.filter(t => !t.completed);
+        const completedTasks = visibleTasks.filter(t => t.completed);
         
         // Sort uncompleted tasks by due date
         const sortedUncompleted = [...uncompletedTasks].sort((a, b) => {
@@ -670,7 +688,9 @@ class FamilyConnect {
         if (task.assignee) {
             const assigneeSpan = document.createElement('span');
             assigneeSpan.className = 'task-assignee';
-            assigneeSpan.textContent = `👤 ${task.assignee}`;
+            assigneeSpan.textContent = task.assignee;
+            assigneeSpan.style.background = this.hexToRgba(this.getMemberColor(task.assignee), 0.12);
+            assigneeSpan.style.color = this.getMemberColor(task.assignee);
             taskMeta.appendChild(assigneeSpan);
         }
         
@@ -693,6 +713,10 @@ class FamilyConnect {
             }
             dueDateSpan.textContent = `📅 ${dueDateText}`;
             taskMeta.appendChild(dueDateSpan);
+        }
+        
+        if (task.assignee) {
+            taskCard.style.borderLeftColor = this.getMemberColor(task.assignee);
         }
         
         taskCard.appendChild(taskHeader);
@@ -748,36 +772,33 @@ class FamilyConnect {
             periodTitle = `Month at a Glance - ${this.formatDateShort(startDate)} to ${this.formatDateShort(endDate)}`;
         }
         
-        // Filter events for the period (only future events from today onwards)
-        const periodEvents = this.events.filter(event => {
-            const eventDate = this.parseEventDate(event.date);
-            // Normalize dates to compare only date part (ignore time)
-            const eventDateOnly = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-            const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-            const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-            // Only include events from today onwards (exclude past events)
-            return eventDateOnly >= today && eventDateOnly >= startDateOnly && eventDateOnly <= endDateOnly;
-        });
+        const heading = document.createElement('div');
+        heading.className = 'glance-title';
+        heading.textContent = periodTitle;
+        glanceContent.appendChild(heading);
+        
+        glanceContent.appendChild(this.renderGlanceDinners());
+        
+        const periodEvents = this.getEventsInRange(startDate, endDate);
         
         // Filter tasks for the period (includes tasks with due dates in range or no due date)
         // Exclude completed tasks from glance view
         // Only show tasks that are due today or in the future
         const periodTasks = this.tasks.filter(task => {
-            if (task.completed) return false; // Exclude completed tasks
-            if (!task.dueDate) return true; // Include tasks without due dates
-            const taskDueDate = this.parseEventDate(task.dueDate);
-            const taskDueDateOnly = new Date(taskDueDate.getFullYear(), taskDueDate.getMonth(), taskDueDate.getDate());
-            const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-            const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-            // Only include tasks due today or in the future (exclude past due dates)
-            return taskDueDateOnly >= today && taskDueDateOnly >= startDateOnly && taskDueDateOnly <= endDateOnly;
+            if (task.completed) return false;
+            if (!task.dueDate) return this.glancePeriod === 'day';
+            const taskDueDateOnly = this.startOfDay(this.parseEventDate(task.dueDate));
+            const startDateOnly = this.startOfDay(startDate);
+            const endDateOnly = this.startOfDay(endDate);
+            if (taskDueDateOnly < today) return true;
+            return taskDueDateOnly >= startDateOnly && taskDueDateOnly <= endDateOnly;
         });
         
         // Events section
         const eventsSection = document.createElement('div');
         eventsSection.className = 'glance-section';
         const eventsHeader = document.createElement('h3');
-        eventsHeader.textContent = `📅 Events (${periodEvents.length})`;
+        eventsHeader.textContent = `Events (${periodEvents.length})`;
         eventsSection.appendChild(eventsHeader);
         
         if (periodEvents.length === 0) {
@@ -787,17 +808,14 @@ class FamilyConnect {
             eventsSection.appendChild(emptyEvents);
         } else {
             // Sort events by date
-            periodEvents.sort((a, b) => {
-                const dateA = this.parseEventDate(a.date);
-                const dateB = this.parseEventDate(b.date);
-                return dateA - dateB;
-            });
+            periodEvents.sort((a, b) => a.occurrenceDate - b.occurrenceDate);
             
             periodEvents.forEach(event => {
                 const eventItem = document.createElement('div');
                 eventItem.className = 'glance-item glance-event';
+                eventItem.style.borderLeftColor = this.getMemberColor(event.assignee);
                 
-                const eventDate = this.parseEventDate(event.date);
+                const eventDate = event.occurrenceDate;
                 const dateStr = this.formatDateWithDay(eventDate);
                 
                 const eventTitle = document.createElement('div');
@@ -809,7 +827,7 @@ class FamilyConnect {
                 eventMeta.textContent = dateStr;
                 
                 if (event.date.includes('T') || event.date.includes(':')) {
-                    const timeStr = eventDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const timeStr = this.parseEventDate(event.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     eventMeta.textContent += ` at ${timeStr}`;
                 }
                 
@@ -837,7 +855,7 @@ class FamilyConnect {
         const tasksSection = document.createElement('div');
         tasksSection.className = 'glance-section';
         const tasksHeader = document.createElement('h3');
-        tasksHeader.textContent = `✅ Tasks (${periodTasks.length})`;
+        tasksHeader.textContent = `Tasks (${periodTasks.length})`;
         tasksSection.appendChild(tasksHeader);
         
         if (periodTasks.length === 0) {
@@ -874,7 +892,8 @@ class FamilyConnect {
                 taskMeta.className = 'glance-item-meta';
                 
                 if (task.assignee) {
-                    taskMeta.textContent += `👤 ${task.assignee}`;
+                    taskItem.style.borderLeftColor = this.getMemberColor(task.assignee);
+                    taskMeta.textContent += task.assignee;
                 }
                 if (task.dueDate) {
                     const dueDate = this.parseEventDate(task.dueDate);
@@ -921,6 +940,69 @@ class FamilyConnect {
         glanceContent.appendChild(tasksSection);
     }
 
+    renderGlanceDinners() {
+        const section = document.createElement('div');
+        section.className = 'glance-section';
+        const header = document.createElement('h3');
+        const week = this.getCurrentWeekDates();
+        const todayKey = this.weekDays[new Date().getDay()];
+
+        const goToMenu = () => {
+            const menuBtn = document.querySelector('.nav-item[data-tab="menu"]');
+            if (menuBtn) menuBtn.click();
+        };
+
+        if (this.glancePeriod === 'day') {
+            const dinner = (this.weekMenu[todayKey] || '').trim();
+            header.textContent = 'Dinner';
+            section.appendChild(header);
+            const item = document.createElement('div');
+            item.className = 'glance-item';
+            const title = document.createElement('div');
+            title.className = 'glance-item-title';
+            title.textContent = dinner || 'Nothing planned';
+            const meta = document.createElement('div');
+            meta.className = 'glance-item-meta';
+            meta.textContent = dinner ? 'Tonight' : 'Tap to add tonight\'s dinner';
+            item.appendChild(title);
+            item.appendChild(meta);
+            item.addEventListener('click', goToMenu);
+            section.appendChild(item);
+            return section;
+        }
+
+        const planned = this.weekDays.filter((day) => (this.weekMenu[day] || '').trim());
+        header.textContent = `Dinners (${planned.length})`;
+        section.appendChild(header);
+        if (planned.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'glance-empty';
+            empty.textContent = 'No dinners planned this week';
+            section.appendChild(empty);
+            section.addEventListener('click', goToMenu);
+            return section;
+        }
+
+        week.forEach(({ day, date }) => {
+            const dinner = (this.weekMenu[day] || '').trim();
+            if (!dinner) return;
+            const item = document.createElement('div');
+            item.className = 'glance-item';
+            if (day === todayKey) item.style.borderLeftColor = 'var(--primary-color)';
+            const title = document.createElement('div');
+            title.className = 'glance-item-title';
+            title.textContent = dinner;
+            const meta = document.createElement('div');
+            meta.className = 'glance-item-meta';
+            meta.textContent = this.formatDateWithDay(date);
+            item.appendChild(title);
+            item.appendChild(meta);
+            item.addEventListener('click', goToMenu);
+            section.appendChild(item);
+        });
+        return section;
+    }
+
     openDayEventsModal(date) {
         this.selectedDayDate = date;
         const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -928,9 +1010,7 @@ class FamilyConnect {
         const dateStr = this.formatDateShort(date);
         document.getElementById('dayEventsModalTitle').textContent = `Events - ${dateStr}`;
         
-        const dayEvents = this.events.filter(event => {
-            return this.isSameDate(event.date, date);
-        });
+        const dayEvents = this.getEventsForDate(date);
         
         const eventsList = document.getElementById('dayEventsList');
         const emptyState = document.getElementById('emptyDayEvents');
@@ -948,9 +1028,13 @@ class FamilyConnect {
                 const eventHeader = document.createElement('div');
                 eventHeader.className = 'event-header';
                 
+                eventCard.style.borderLeftColor = this.getMemberColor(event.assignee);
+                
                 const eventTitle = document.createElement('div');
                 eventTitle.className = 'event-title';
-                eventTitle.textContent = event.title;
+                eventTitle.textContent = event.repeat && event.repeat !== 'none'
+                    ? `${event.title} (${event.repeat})`
+                    : event.title;
                 
                 eventHeader.appendChild(eventTitle);
                 
@@ -1053,32 +1137,9 @@ class FamilyConnect {
                 }
                 
                 document.getElementById('eventDescriptionInput').value = event.description || '';
+                document.getElementById('eventRepeatInput').value = event.repeat || 'none';
+                document.getElementById('eventAssigneeInput').value = event.assignee || '';
                 document.getElementById('deleteEventBtn').style.display = 'block';
-                document.getElementById('eventSendNowSection').style.display = 'block';
-                
-                // Always populate member list for "Send Now" button
-                this.updateSendNowMembersList('event');
-                
-                // Load reminder settings
-                if (event.reminders && event.reminders.enabled) {
-                    document.getElementById('eventRemindersEnabled').checked = true;
-                    document.getElementById('eventReminderOptions').style.display = 'block';
-                    
-                    // Check reminder time checkboxes
-                    document.querySelectorAll('.reminder-time-checkbox').forEach(cb => {
-                        cb.checked = event.reminders.times && event.reminders.times.includes(cb.value);
-                    });
-                    
-                    // Check member checkboxes
-                    if (event.reminders.memberIds) {
-                        document.querySelectorAll('.reminder-member-checkbox').forEach(cb => {
-                            cb.checked = event.reminders.memberIds.includes(cb.value);
-                        });
-                    }
-                } else {
-                    document.getElementById('eventRemindersEnabled').checked = false;
-                    document.getElementById('eventReminderOptions').style.display = 'none';
-                }
             }
         } else {
             this.editingEventId = null;
@@ -1089,10 +1150,9 @@ class FamilyConnect {
             document.getElementById('eventMinuteInput').value = '';
             document.getElementById('eventAmPmInput').value = '';
             document.getElementById('eventDescriptionInput').value = '';
+            document.getElementById('eventRepeatInput').value = 'none';
+            document.getElementById('eventAssigneeInput').value = '';
             document.getElementById('deleteEventBtn').style.display = 'none';
-            document.getElementById('eventSendNowSection').style.display = 'none';
-            document.getElementById('eventRemindersEnabled').checked = false;
-            document.getElementById('eventReminderOptions').style.display = 'none';
             
             if (!date) {
                 const today = new Date();
@@ -1119,6 +1179,8 @@ class FamilyConnect {
         const minute = document.getElementById('eventMinuteInput').value;
         const ampm = document.getElementById('eventAmPmInput').value;
         const description = document.getElementById('eventDescriptionInput').value.trim();
+        const repeat = document.getElementById('eventRepeatInput').value || 'none';
+        const assignee = document.getElementById('eventAssigneeInput').value.trim();
         
         if (!title) {
             alert('Please enter an event title');
@@ -1153,29 +1215,6 @@ class FamilyConnect {
             eventDate = date;
         }
         
-        // Get reminder settings
-        const remindersEnabled = document.getElementById('eventRemindersEnabled').checked;
-        const reminderTimes = [];
-        if (remindersEnabled) {
-            document.querySelectorAll('.reminder-time-checkbox:checked').forEach(cb => {
-                reminderTimes.push(cb.value);
-            });
-        }
-        const reminderMemberIds = [];
-        if (remindersEnabled) {
-            document.querySelectorAll('.reminder-member-checkbox:checked').forEach(cb => {
-                reminderMemberIds.push(cb.value);
-            });
-        }
-        
-        const reminderSettings = remindersEnabled && reminderTimes.length > 0 && reminderMemberIds.length > 0
-            ? {
-                enabled: true,
-                times: reminderTimes,
-                memberIds: reminderMemberIds
-            }
-            : null;
-        
         if (this.editingEventId) {
             // Update existing event
             const eventIndex = this.events.findIndex(e => e.id === this.editingEventId);
@@ -1185,28 +1224,27 @@ class FamilyConnect {
                     title,
                     date: eventDate,
                     description: description || null,
-                    reminders: reminderSettings
+                    repeat,
+                    assignee: assignee || null
                 };
-                this.scheduleReminders('event', this.editingEventId, this.events[eventIndex]);
+                delete this.events[eventIndex].reminders;
             }
         } else {
-            // Add new event
             const newEvent = {
                 id: Date.now().toString(),
                 title,
                 date: eventDate,
                 description: description || null,
-                reminders: reminderSettings,
+                repeat,
+                assignee: assignee || null,
                 createdAt: new Date().toISOString()
             };
             this.events.push(newEvent);
-            this.scheduleReminders('event', newEvent.id, newEvent);
         }
         
         this.saveData();
-        this.renderCalendar();
         this.closeEventModal();
-        this.renderGlance(); // Refresh glance view
+        this.refreshVisible();
         
         // If we were viewing day events, refresh that view
         if (this.selectedDayDate) {
@@ -1221,9 +1259,8 @@ class FamilyConnect {
         if (this.editingEventId && confirm('Are you sure you want to delete this event?')) {
             this.events = this.events.filter(e => e.id !== this.editingEventId);
             this.saveData();
-            this.renderCalendar();
-            this.renderGlance(); // Refresh glance view
             this.closeEventModal();
+            this.refreshVisible();
             
             // If we were viewing day events, refresh that view
             if (this.selectedDayDate) {
@@ -1275,31 +1312,6 @@ class FamilyConnect {
                 
                 document.getElementById('taskDescriptionInput').value = task.description || '';
                 document.getElementById('deleteTaskBtn').style.display = 'block';
-                document.getElementById('taskSendNowSection').style.display = 'block';
-                
-                // Always populate member list for "Send Now" button
-                this.updateSendNowMembersList('task');
-                
-                // Load reminder settings
-                if (task.reminders && task.reminders.enabled) {
-                    document.getElementById('taskRemindersEnabled').checked = true;
-                    document.getElementById('taskReminderOptions').style.display = 'block';
-                    
-                    // Check reminder time checkboxes
-                    document.querySelectorAll('.task-reminder-time-checkbox').forEach(cb => {
-                        cb.checked = task.reminders.times && task.reminders.times.includes(cb.value);
-                    });
-                    
-                    // Check member checkboxes
-                    if (task.reminders.memberIds) {
-                        document.querySelectorAll('.task-reminder-member-checkbox').forEach(cb => {
-                            cb.checked = task.reminders.memberIds.includes(cb.value);
-                        });
-                    }
-                } else {
-                    document.getElementById('taskRemindersEnabled').checked = false;
-                    document.getElementById('taskReminderOptions').style.display = 'none';
-                }
             }
         } else {
             this.editingTaskId = null;
@@ -1312,9 +1324,6 @@ class FamilyConnect {
             document.getElementById('taskDueAmPmInput').value = '';
             document.getElementById('taskDescriptionInput').value = '';
             document.getElementById('deleteTaskBtn').style.display = 'none';
-            document.getElementById('taskSendNowSection').style.display = 'none';
-            document.getElementById('taskRemindersEnabled').checked = false;
-            document.getElementById('taskReminderOptions').style.display = 'none';
         }
         
         document.getElementById('taskModal').style.display = 'block';
@@ -1370,29 +1379,6 @@ class FamilyConnect {
             dueDateValue = null;
         }
         
-        // Get reminder settings
-        const remindersEnabled = document.getElementById('taskRemindersEnabled').checked;
-        const reminderTimes = [];
-        if (remindersEnabled) {
-            document.querySelectorAll('.task-reminder-time-checkbox:checked').forEach(cb => {
-                reminderTimes.push(cb.value);
-            });
-        }
-        const reminderMemberIds = [];
-        if (remindersEnabled) {
-            document.querySelectorAll('.task-reminder-member-checkbox:checked').forEach(cb => {
-                reminderMemberIds.push(cb.value);
-            });
-        }
-        
-        const reminderSettings = remindersEnabled && reminderTimes.length > 0 && reminderMemberIds.length > 0
-            ? {
-                enabled: true,
-                times: reminderTimes,
-                memberIds: reminderMemberIds
-            }
-            : null;
-        
         if (this.editingTaskId) {
             // Update existing task
             const taskIndex = this.tasks.findIndex(t => t.id === this.editingTaskId);
@@ -1402,12 +1388,9 @@ class FamilyConnect {
                     title,
                     assignee: assignee || null,
                     dueDate: dueDateValue,
-                    description: description || null,
-                    reminders: reminderSettings
+                    description: description || null
                 };
-                if (dueDateValue) {
-                    this.scheduleReminders('task', this.editingTaskId, this.tasks[taskIndex]);
-                }
+                delete this.tasks[taskIndex].reminders;
             }
         } else {
             // Add new task
@@ -1417,29 +1400,25 @@ class FamilyConnect {
                 assignee: assignee || null,
                 dueDate: dueDateValue,
                 description: description || null,
-                reminders: reminderSettings,
                 completed: false,
                 createdAt: new Date().toISOString()
             };
             this.tasks.push(newTask);
-            if (dueDateValue) {
-                this.scheduleReminders('task', newTask.id, newTask);
-            }
         }
         
         this.saveData();
-        this.renderTasks();
-        this.renderGlance(); // Refresh glance view
         this.closeTaskModal();
+        this.refreshVisible();
+        this.renderTaskFilters();
     }
 
     deleteTask() {
         if (this.editingTaskId && confirm('Are you sure you want to delete this task?')) {
             this.tasks = this.tasks.filter(t => t.id !== this.editingTaskId);
             this.saveData();
-            this.renderTasks();
-            this.renderGlance(); // Refresh glance view
             this.closeTaskModal();
+            this.refreshVisible();
+            this.renderTaskFilters();
         }
     }
 
@@ -1447,9 +1426,13 @@ class FamilyConnect {
         const task = this.tasks.find(t => t.id === taskId);
         if (task) {
             task.completed = !task.completed;
+            if (task.completed) {
+                task.completedAt = new Date().toISOString();
+            } else {
+                delete task.completedAt;
+            }
             this.saveData();
-            this.renderTasks();
-            this.renderGlance(); // Refresh glance view
+            this.refreshVisible();
         }
     }
 
@@ -1458,6 +1441,11 @@ class FamilyConnect {
         const emptyState = document.getElementById('emptyGroceriesState');
         
         groceriesList.innerHTML = '';
+        const clearBtn = document.getElementById('clearCheckedBtn');
+        const hasChecked = this.groceries.some(g => g.checked);
+        if (clearBtn) {
+            clearBtn.style.display = hasChecked ? 'block' : 'none';
+        }
         
         if (this.groceries.length === 0) {
             emptyState.style.display = 'block';
@@ -1638,6 +1626,15 @@ class FamilyConnect {
         this.renderGroceries();
     }
 
+    clearCheckedGroceries() {
+        const count = this.groceries.filter(g => g.checked).length;
+        if (!count) return;
+        if (!confirm(`Remove ${count} purchased item${count === 1 ? '' : 's'}?`)) return;
+        this.groceries = this.groceries.filter(g => !g.checked);
+        this.saveData();
+        this.renderGroceries();
+    }
+
     openMembersModal() {
         document.getElementById('membersModal').style.display = 'block';
         this.renderMembers();
@@ -1665,18 +1662,12 @@ class FamilyConnect {
             
             const memberName = document.createElement('div');
             memberName.className = 'member-name';
-            memberName.textContent = member.name;
+            const swatch = document.createElement('span');
+            swatch.className = 'member-swatch';
+            swatch.style.background = member.color || this.getMemberColor(member.name);
+            memberName.appendChild(swatch);
+            memberName.appendChild(document.createTextNode(member.name));
             memberInfo.appendChild(memberName);
-            
-            if (member.phone && member.carrier) {
-                const phoneInfo = document.createElement('div');
-                phoneInfo.style.fontSize = '12px';
-                phoneInfo.style.color = 'var(--text-secondary)';
-                phoneInfo.style.marginTop = '4px';
-                const formattedPhone = `(${member.phone.slice(0,3)}) ${member.phone.slice(3,6)}-${member.phone.slice(6)}`;
-                phoneInfo.textContent = `📱 ${formattedPhone} • ${member.carrier.charAt(0).toUpperCase() + member.carrier.slice(1)}`;
-                memberInfo.appendChild(phoneInfo);
-            }
             
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'member-delete-btn';
@@ -1686,7 +1677,9 @@ class FamilyConnect {
                     this.members = this.members.filter(m => m.id !== member.id);
                     this.saveData();
                     this.updateMemberSelects();
+                    this.renderTaskFilters();
                     this.renderMembers();
+                    this.refreshVisible();
                 }
             });
             
@@ -1698,12 +1691,7 @@ class FamilyConnect {
 
     addMember() {
         const nameInput = document.getElementById('memberNameInput');
-        const phoneInput = document.getElementById('memberPhoneInput');
-        const carrierInput = document.getElementById('memberCarrierInput');
-        
         const name = nameInput.value.trim();
-        const phone = phoneInput.value.replace(/\D/g, ''); // Remove non-digits
-        const carrier = carrierInput.value.trim();
         
         if (!name) {
             alert('Please enter a name');
@@ -1715,54 +1703,55 @@ class FamilyConnect {
             return;
         }
         
-        // Validate phone if provided
-        if (phone && phone.length !== 10) {
-            alert('Please enter a valid 10-digit phone number');
-            return;
-        }
-        
-        // Require carrier if phone is provided
-        if (phone && !carrier) {
-            alert('Please select a carrier when adding a phone number');
-            return;
-        }
-        
+        const used = new Set(this.members.map(m => m.color));
+        const color = this.memberColors.find(c => !used.has(c)) || this.memberColors[this.members.length % this.memberColors.length];
         const newMember = {
             id: Date.now().toString(),
             name: name,
-            phone: phone || null,
-            carrier: carrier || null,
+            color,
             createdAt: new Date().toISOString()
         };
         
         this.members.push(newMember);
         this.saveData();
         this.updateMemberSelects();
+        this.renderTaskFilters();
         this.renderMembers();
         nameInput.value = '';
-        phoneInput.value = '';
-        carrierInput.value = '';
     }
 
     updateMemberSelects() {
-        const assigneeSelect = document.getElementById('taskAssigneeInput');
-        assigneeSelect.innerHTML = '<option value="">Unassigned</option>';
-        
-        this.members.forEach(member => {
-            const option = document.createElement('option');
-            option.value = member.name;
-            option.textContent = member.name;
-            assigneeSelect.appendChild(option);
+        const selects = [
+            { id: 'taskAssigneeInput', empty: 'Unassigned' },
+            { id: 'eventAssigneeInput', empty: 'Everyone' }
+        ];
+        selects.forEach(({ id, empty }) => {
+            const select = document.getElementById(id);
+            if (!select) return;
+            const current = select.value;
+            select.innerHTML = `<option value="">${empty}</option>`;
+            this.members.forEach(member => {
+                const option = document.createElement('option');
+                option.value = member.name;
+                option.textContent = member.name;
+                select.appendChild(option);
+            });
+            if ([...select.options].some(o => o.value === current)) {
+                select.value = current;
+            }
         });
     }
 
-    openFamilyModal() {
+    openMoreModal() {
         document.getElementById('familyIdDisplay').value = this.familyId;
-        document.getElementById('familyModal').style.display = 'block';
+        document.getElementById('moreModal').style.display = 'block';
+        if (window.updateManager) {
+            window.updateManager.loadVersion();
+        }
     }
 
-    closeFamilyModal() {
-        document.getElementById('familyModal').style.display = 'none';
+    closeMoreModal() {
+        document.getElementById('moreModal').style.display = 'none';
     }
 
     setupFamilyIdUI() {
@@ -1833,13 +1822,11 @@ class FamilyConnect {
         const statusEl = document.getElementById('syncStatus');
         if (statusEl) {
             if (this.firebaseEnabled) {
-                statusEl.innerHTML = '🟢 Syncing across devices';
-                statusEl.style.color = '#90EE90';
-                statusEl.style.fontWeight = '600';
+                statusEl.textContent = 'Syncing across devices';
+                statusEl.style.color = 'var(--success-color)';
             } else {
-                statusEl.innerHTML = '⚪ Local mode (Firebase not configured)';
-                statusEl.style.color = 'rgba(255, 255, 255, 0.8)';
-                statusEl.style.fontWeight = '500';
+                statusEl.textContent = 'Saved on this device only';
+                statusEl.style.color = 'var(--text-secondary)';
             }
         }
     }
@@ -1868,451 +1855,128 @@ class FamilyConnect {
         return `${dayNames[date.getDay()]} ${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
     }
 
-    // Reminder Management Methods
-    updateReminderMembersList(type) {
-        const containerId = type === 'event' ? 'eventReminderMembers' : 'taskReminderMembers';
-        const container = document.getElementById(containerId);
-        container.innerHTML = '';
-        
-        const membersWithPhones = this.members.filter(m => m.phone && m.carrier);
-        
-        if (membersWithPhones.length === 0) {
-            container.innerHTML = '<p style="color: var(--text-secondary); font-size: 13px; text-align: center; padding: 10px;">No family members with phone numbers. Add phone numbers in Family Members settings.</p>';
-            return;
-        }
-        
-        membersWithPhones.forEach(member => {
-            const label = document.createElement('label');
-            label.style.display = 'flex';
-            label.style.alignItems = 'center';
-            label.style.gap = '8px';
-            label.style.marginBottom = '8px';
-            label.style.fontWeight = 'normal';
-            label.style.cursor = 'pointer';
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.value = member.id;
-            checkbox.className = type === 'event' ? 'reminder-member-checkbox' : 'task-reminder-member-checkbox';
-            checkbox.style.width = 'auto';
-            
-            const memberText = document.createElement('span');
-            memberText.textContent = `${member.name} (${member.phone})`;
-            
-            label.appendChild(checkbox);
-            label.appendChild(memberText);
-            container.appendChild(label);
-        });
-        
-        // Also update the "Send Now" section
-        this.updateSendNowMembersList(type);
-    }
-
-    updateSendNowMembersList(type) {
-        const containerId = type === 'event' ? 'eventSendNowMembers' : 'taskSendNowMembers';
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        
-        container.innerHTML = '';
-        
-        const membersWithPhones = this.members.filter(m => m.phone && m.carrier);
-        
-        if (membersWithPhones.length === 0) {
-            container.innerHTML = '<p style="color: var(--text-secondary); font-size: 13px; text-align: center; padding: 10px;">No family members with phone numbers. Add phone numbers in Family Members settings.</p>';
-            return;
-        }
-        
-        membersWithPhones.forEach(member => {
-            const label = document.createElement('label');
-            label.style.display = 'flex';
-            label.style.alignItems = 'center';
-            label.style.gap = '8px';
-            label.style.marginBottom = '8px';
-            label.style.fontWeight = 'normal';
-            label.style.cursor = 'pointer';
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.value = member.id;
-            checkbox.className = type === 'event' ? 'sendnow-member-checkbox' : 'task-sendnow-member-checkbox';
-            checkbox.style.width = 'auto';
-            checkbox.checked = false; // Don't auto-check - user must select
-            
-            const memberText = document.createElement('span');
-            memberText.textContent = `${member.name} (${member.phone})`;
-            
-            label.appendChild(checkbox);
-            label.appendChild(memberText);
-            container.appendChild(label);
-        });
-    }
-
-    openSettingsModal() {
-        document.getElementById('vercelUrlInput').value = this.vercelUrl;
-        document.getElementById('apiKeyInput').value = this.apiKey;
-        document.getElementById('settingsModal').style.display = 'block';
-        // Load version when opening settings
-        if (window.updateManager) {
-            window.updateManager.loadVersion();
-        }
-    }
-
-    closeSettingsModal() {
-        document.getElementById('settingsModal').style.display = 'none';
-    }
-
-    saveSettings() {
-        const vercelUrl = document.getElementById('vercelUrlInput').value.trim();
-        const apiKey = document.getElementById('apiKeyInput').value.trim();
-        
-        this.vercelUrl = vercelUrl;
-        this.apiKey = apiKey;
-        
-        localStorage.setItem('familyConnectVercelUrl', vercelUrl);
-        localStorage.setItem('familyConnectApiKey', apiKey);
-        
-        alert('Settings saved successfully!');
-        this.closeSettingsModal();
-    }
-
-    async testConnection() {
-        if (!this.vercelUrl) {
-            alert('Please enter a Vercel URL first');
-            return;
-        }
-        
-        const testBtn = document.getElementById('testConnectionBtn');
-        testBtn.textContent = 'Testing...';
-        testBtn.disabled = true;
-        
-        try {
-            // Test with a dummy request
-            const response = await fetch(this.vercelUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(this.apiKey && { 'x-api-key': this.apiKey })
-                },
-                body: JSON.stringify({
-                    phone: '1234567890',
-                    carrier: 'verizon',
-                    message: 'Test connection from Family Connect'
-                })
-            });
-            
-            const responseText = await response.text();
-            let errorData;
-            try {
-                errorData = JSON.parse(responseText);
-            } catch {
-                errorData = { message: responseText };
+    ensureMemberColors() {
+        let changed = false;
+        this.members.forEach((member, index) => {
+            if (!member.color) {
+                member.color = this.memberColors[index % this.memberColors.length];
+                changed = true;
             }
-            
-            if (response.ok) {
-                alert('✅ Connection successful! Your Vercel function is working.');
-            } else {
-                console.error('Test connection error:', {
-                    status: response.status,
-                    statusText: response.statusText,
-                    body: errorData
-                });
-                
-                let errorMsg = `Connection failed: ${errorData.error || errorData.details || errorData.message || `HTTP ${response.status}`}`;
-                
-                // Add helpful hints based on error
-                if (response.status === 500) {
-                    errorMsg += '\n\nCheck Vercel function logs for details:\n1. Go to Vercel Dashboard\n2. Your Project → Functions → View Logs\n3. Look for the error message';
-                } else if (response.status === 401) {
-                    errorMsg += '\n\nCheck your API key in Settings.';
-                } else if (response.status === 400) {
-                    errorMsg += '\n\nCheck that all required fields are being sent.';
+        });
+        if (changed) this.saveToLocalStorage();
+    }
+
+    getMemberColor(name) {
+        if (!name) return 'var(--primary-color)';
+        const member = this.members.find(m => m.name === name);
+        return (member && member.color) || this.memberColors[0];
+    }
+
+    hexToRgba(hex, alpha) {
+        if (!hex || !hex.startsWith('#')) return `rgba(91, 108, 255, ${alpha})`;
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    startOfDay(date) {
+        return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+
+    eventOccursOn(event, date) {
+        const eventDate = this.startOfDay(this.parseEventDate(event.date));
+        const target = this.startOfDay(date);
+        if (target < eventDate) return false;
+        if (!event.repeat || event.repeat === 'none') {
+            return eventDate.getTime() === target.getTime();
+        }
+        if (event.repeat === 'weekly') {
+            const days = Math.round((target - eventDate) / 86400000);
+            return days % 7 === 0;
+        }
+        if (event.repeat === 'monthly') {
+            return target.getDate() === eventDate.getDate();
+        }
+        return false;
+    }
+
+    getEventsForDate(date) {
+        return this.events.filter(event => this.eventOccursOn(event, date));
+    }
+
+    getEventsInRange(startDate, endDate) {
+        const start = this.startOfDay(startDate);
+        const end = this.startOfDay(endDate);
+        const results = [];
+        this.events.forEach(event => {
+            const cursor = this.startOfDay(this.parseEventDate(event.date));
+            if (!event.repeat || event.repeat === 'none') {
+                if (cursor >= start && cursor <= end) {
+                    results.push({ ...event, occurrenceDate: cursor });
                 }
-                
-                alert(errorMsg);
+                return;
             }
-        } catch (error) {
-            console.error('Test connection network error:', error);
-            alert(`Connection failed: ${error.message}\n\nMake sure:\n1. Your Vercel URL is correct\n2. The function is deployed\n3. Your internet connection is working`);
-        } finally {
-            testBtn.textContent = 'Test Connection';
-            testBtn.disabled = false;
-        }
+            let day = new Date(cursor);
+            let guard = 0;
+            while (day <= end && guard < 400) {
+                if (day >= start && this.eventOccursOn(event, day)) {
+                    results.push({ ...event, occurrenceDate: new Date(day) });
+                }
+                if (event.repeat === 'weekly') day.setDate(day.getDate() + 7);
+                else if (event.repeat === 'monthly') day.setMonth(day.getMonth() + 1);
+                else break;
+                guard++;
+            }
+        });
+        return results;
     }
 
-    async sendSMS(phone, carrier, message) {
-        if (!this.vercelUrl) {
-            return { success: false, error: 'Vercel URL not configured. Please set it in Settings.' };
-        }
-        
-        try {
-            const response = await fetch(this.vercelUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(this.apiKey && { 'x-api-key': this.apiKey })
-                },
-                body: JSON.stringify({
-                    phone: phone,
-                    carrier: carrier,
-                    message: message
-                })
+    isTaskOverdue(task) {
+        if (task.completed || !task.dueDate) return false;
+        const due = this.startOfDay(this.parseEventDate(task.dueDate));
+        const today = this.startOfDay(new Date());
+        return due < today;
+    }
+
+    isRecentCompleted(task) {
+        if (!task.completed) return true;
+        const stamp = task.completedAt || task.dueDate || task.createdAt;
+        if (!stamp) return true;
+        return Date.now() - new Date(stamp).getTime() <= 14 * 24 * 60 * 60 * 1000;
+    }
+
+    getFilteredTasks() {
+        return this.tasks.filter(task => {
+            if (!this.isRecentCompleted(task)) return false;
+            if (this.taskFilter === 'overdue') return this.isTaskOverdue(task);
+            if (this.taskFilter !== 'all') return task.assignee === this.taskFilter;
+            return true;
+        });
+    }
+
+    renderTaskFilters() {
+        const row = document.getElementById('taskFilters');
+        if (!row) return;
+        const filters = [
+            { id: 'all', label: 'All' },
+            { id: 'overdue', label: 'Overdue' },
+            ...this.members.map(member => ({ id: member.name, label: member.name }))
+        ];
+        row.innerHTML = '';
+        filters.forEach(filter => {
+            const chip = document.createElement('button');
+            chip.className = 'filter-chip' + (this.taskFilter === filter.id ? ' active' : '');
+            chip.textContent = filter.label;
+            chip.addEventListener('click', () => {
+                this.taskFilter = filter.id;
+                this.renderTaskFilters();
+                this.renderTasks();
             });
-            
-            const responseText = await response.text();
-            let responseData;
-            try {
-                responseData = JSON.parse(responseText);
-            } catch {
-                responseData = { message: responseText };
-            }
-            
-            if (response.ok) {
-                return { success: true, data: responseData };
-            } else {
-                // Log full error for debugging
-                console.error('Vercel function error:', {
-                    status: response.status,
-                    statusText: response.statusText,
-                    body: responseData
-                });
-                
-                return { 
-                    success: false, 
-                    error: responseData.error || responseData.details || responseData.message || `HTTP ${response.status}: ${response.statusText}`,
-                    details: responseData
-                };
-            }
-        } catch (error) {
-            console.error('Network error sending SMS:', error);
-            return { success: false, error: 'Network error: ' + error.message };
-        }
-    }
-
-    async sendReminderNow(type, itemId) {
-        if (!itemId) {
-            alert('Please save the item first before sending reminders');
-            return;
-        }
-        
-        const item = type === 'event' 
-            ? this.events.find(e => e.id === itemId)
-            : this.tasks.find(t => t.id === itemId);
-        
-        if (!item) {
-            alert('Item not found');
-            return;
-        }
-        
-        // Get selected members from "Send Now" section
-        const checkboxes = type === 'event'
-            ? document.querySelectorAll('.sendnow-member-checkbox:checked')
-            : document.querySelectorAll('.task-sendnow-member-checkbox:checked');
-        
-        if (checkboxes.length === 0) {
-            alert('Please select at least one family member to notify');
-            return;
-        }
-        
-        const memberIds = Array.from(checkboxes).map(cb => cb.value);
-        const membersToNotify = this.members.filter(m => memberIds.includes(m.id) && m.phone && m.carrier);
-        
-        if (membersToNotify.length === 0) {
-            alert('Selected members do not have phone numbers configured');
-            return;
-        }
-        
-        // Create message - simplified to just title
-        let message = item.title;
-        
-        // Limit message length for SMS (usually 160 chars, but we'll be safe with 140)
-        if (message.length > 140) {
-            message = message.substring(0, 137) + '...';
-        }
-        
-        // Send to all selected members
-        const sendBtn = type === 'event' ? document.getElementById('sendEventReminderBtn') : document.getElementById('sendTaskReminderBtn');
-        const originalText = sendBtn.textContent;
-        sendBtn.textContent = 'Sending...';
-        sendBtn.disabled = true;
-        
-        let successCount = 0;
-        let failCount = 0;
-        const errors = [];
-        
-        for (const member of membersToNotify) {
-            console.log(`Sending SMS to ${member.name} (${member.phone}) via ${member.carrier}...`);
-            const result = await this.sendSMS(member.phone, member.carrier, message);
-            if (result.success) {
-                successCount++;
-                console.log(`✓ SMS sent successfully to ${member.name}`);
-            } else {
-                failCount++;
-                errors.push(`${member.name}: ${result.error}`);
-                console.error(`✗ Failed to send SMS to ${member.name}:`, result.error);
-            }
-        }
-        
-        sendBtn.textContent = originalText;
-        sendBtn.disabled = false;
-        
-        if (successCount > 0 && failCount === 0) {
-            alert(`✅ Reminders sent successfully to ${successCount} member(s)!`);
-        } else if (successCount > 0) {
-            alert(`⚠️ Sent to ${successCount} member(s), but ${failCount} failed.\n\nErrors:\n${errors.join('\n')}\n\nCheck your Vercel function configuration and SendGrid settings.`);
-        } else {
-            alert(`❌ Failed to send reminders to all members.\n\nErrors:\n${errors.join('\n')}\n\nCheck:\n1. Vercel function URL is correct\n2. SendGrid API key is set\n3. SendGrid from email is verified\n4. Phone numbers are correct (10 digits)\n5. Carrier is correct\n\nCheck browser console (F12) for more details.`);
-        }
-    }
-
-    calculateReminderTimes(eventDate, reminderTimes) {
-        const reminders = [];
-        const eventDateTime = this.parseEventDate(eventDate);
-        
-        reminderTimes.forEach(reminderTime => {
-            let reminderDateTime = new Date(eventDateTime);
-            
-            if (reminderTime === '1 day before') {
-                reminderDateTime.setDate(reminderDateTime.getDate() - 1);
-            } else if (reminderTime === '2 hours before') {
-                reminderDateTime.setHours(reminderDateTime.getHours() - 2);
-            } else if (reminderTime === '1 hour before') {
-                reminderDateTime.setHours(reminderDateTime.getHours() - 1);
-            } else if (reminderTime === '30 minutes before') {
-                reminderDateTime.setMinutes(reminderDateTime.getMinutes() - 30);
-            } else if (reminderTime === '15 minutes before') {
-                reminderDateTime.setMinutes(reminderDateTime.getMinutes() - 15);
-            }
-            
-            reminders.push(reminderDateTime);
+            row.appendChild(chip);
         });
-        
-        return reminders.sort((a, b) => a - b); // Sort by time
     }
 
-    scheduleReminders(type, itemId, item) {
-        if (!item.reminders || !item.reminders.enabled || !item.reminders.times || item.reminders.times.length === 0) {
-            return;
-        }
-        
-        // Remove existing reminders for this item
-        this.scheduledReminders = this.scheduledReminders.filter(r => 
-            !(r.itemType === type && r.itemId === itemId)
-        );
-        
-        const itemDate = type === 'event' ? item.date : item.dueDate;
-        if (!itemDate) return;
-        
-        const reminderTimes = this.calculateReminderTimes(itemDate, item.reminders.times);
-        const memberIds = item.reminders.memberIds || [];
-        
-        reminderTimes.forEach((reminderTime, index) => {
-            const reminder = {
-                id: `${type}_${itemId}_${index}_${Date.now()}`,
-                itemType: type,
-                itemId: itemId,
-                scheduledTime: reminderTime.toISOString(),
-                sent: false,
-                memberIds: memberIds,
-                createdAt: new Date().toISOString()
-            };
-            
-            this.scheduledReminders.push(reminder);
-        });
-        
-        this.saveScheduledReminders();
-    }
-
-    loadScheduledReminders() {
-        const stored = localStorage.getItem('familyConnectScheduledReminders');
-        if (stored) {
-            try {
-                this.scheduledReminders = JSON.parse(stored);
-            } catch (e) {
-                this.scheduledReminders = [];
-            }
-        }
-    }
-
-    saveScheduledReminders() {
-        localStorage.setItem('familyConnectScheduledReminders', JSON.stringify(this.scheduledReminders));
-        
-        // Also save to Firebase if enabled
-        if (this.firebaseEnabled) {
-            db.collection('families').doc(this.familyId).set({
-                scheduledReminders: this.scheduledReminders
-            }, { merge: true }).catch(err => console.error('Error saving reminders:', err));
-        }
-    }
-
-    startReminderChecker() {
-        // Check every minute for due reminders
-        this.reminderCheckInterval = setInterval(() => {
-            this.checkScheduledReminders();
-        }, 60000); // Check every minute
-        
-        // Also check immediately
-        this.checkScheduledReminders();
-    }
-
-    async checkScheduledReminders() {
-        const now = new Date();
-        const dueReminders = this.scheduledReminders.filter(r => {
-            if (r.sent) return false;
-            const scheduledTime = new Date(r.scheduledTime);
-            return scheduledTime <= now;
-        });
-        
-        for (const reminder of dueReminders) {
-            await this.sendScheduledReminder(reminder);
-        }
-    }
-
-    async sendScheduledReminder(reminder) {
-        const item = reminder.itemType === 'event'
-            ? this.events.find(e => e.id === reminder.itemId)
-            : this.tasks.find(t => t.id === reminder.itemId);
-        
-        if (!item) {
-            // Item was deleted, remove reminder
-            this.scheduledReminders = this.scheduledReminders.filter(r => r.id !== reminder.id);
-            this.saveScheduledReminders();
-            return;
-        }
-        
-        const membersToNotify = this.members.filter(m => 
-            reminder.memberIds.includes(m.id) && m.phone && m.carrier
-        );
-        
-        if (membersToNotify.length === 0) {
-            reminder.sent = true;
-            this.saveScheduledReminders();
-            return;
-        }
-        
-        // Create message - simplified to just title
-        let message = item.title;
-        
-        // Limit message length for SMS (usually 160 chars, but we'll be safe with 140)
-        if (message.length > 140) {
-            message = message.substring(0, 137) + '...';
-        }
-        
-        // Send to all members
-        let sent = false;
-        for (const member of membersToNotify) {
-            const result = await this.sendSMS(member.phone, member.carrier, message);
-            if (result.success) {
-                sent = true;
-            }
-        }
-        
-        if (sent) {
-            reminder.sent = true;
-            this.saveScheduledReminders();
-        }
-    }
-
-    // Helper function to parse event date (handles both date-only and datetime formats)
     parseEventDate(dateString) {
         // If it's just a date string (YYYY-MM-DD), parse it as local date
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
