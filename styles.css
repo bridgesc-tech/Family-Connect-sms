@@ -16,6 +16,8 @@
     --text-secondary: #6B7280;
     --border-color: #E5E7EB;
     --nav-height: 68px;
+    --nav-lift: 18px;
+    --nav-side: 12px;
     --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
     --shadow-hover: 0 6px 18px rgba(15, 23, 42, 0.12);
 }
@@ -24,7 +26,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background: var(--bg-color);
     min-height: 100vh;
-    padding: 12px 16px calc(var(--nav-height) + 24px);
+    padding: 12px 16px calc(var(--nav-height) + var(--nav-lift) + 28px);
     color: var(--text-primary);
     overflow-x: hidden;
 }
@@ -79,13 +81,13 @@ body {
 
 .bottom-nav {
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    left: max(var(--nav-side), env(safe-area-inset-left, 0px));
+    right: max(var(--nav-side), env(safe-area-inset-right, 0px));
+    bottom: calc(var(--nav-lift) + env(safe-area-inset-bottom, 0px));
+    height: var(--nav-height);
     background: var(--card-bg);
-    border-top: 1px solid var(--border-color);
+    border-radius: 18px;
+    box-shadow: 0 4px 18px rgba(15, 23, 42, 0.14);
     display: flex;
     z-index: 900;
 }
@@ -819,7 +821,7 @@ body {
 
 @media (max-width: 480px) {
     body {
-        padding: 10px 10px calc(var(--nav-height) + 20px);
+        padding: 10px 10px calc(var(--nav-height) + var(--nav-lift) + 24px);
     }
 
     .calendar-day-header {
@@ -835,6 +837,6 @@ body {
     body {
         padding-left: max(12px, env(safe-area-inset-left));
         padding-right: max(12px, env(safe-area-inset-right));
-        padding-bottom: max(calc(var(--nav-height) + 20px), calc(var(--nav-height) + env(safe-area-inset-bottom)));
+        padding-bottom: calc(var(--nav-height) + var(--nav-lift) + 24px + env(safe-area-inset-bottom, 0px));
     }
 }
