@@ -851,28 +851,60 @@ input, textarea, select {
     cursor: pointer;
 }
 
-.update-banner {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: var(--primary-color);
-    color: white;
-    padding: 12px 20px;
-    z-index: 10000;
+body.update-modal-open {
+    overflow: hidden;
 }
 
-.update-banner.hidden {
+body.update-modal-open > *:not(#updateBanner) {
+    pointer-events: none;
+}
+
+.update-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+}
+
+.update-modal.hidden {
     display: none;
 }
 
-.update-banner-content {
-    max-width: 520px;
-    margin: 0 auto;
+.update-modal-card {
+    background: var(--card-bg);
+    color: var(--text-primary);
+    border-radius: 16px;
+    padding: 24px 20px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
+}
+
+.update-modal-card h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+}
+
+.update-modal-card p {
+    margin: 0 0 20px;
+    color: var(--text-secondary);
+    font-size: 15px;
+    line-height: 1.4;
+}
+
+.update-modal-actions {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.update-modal-actions .btn {
+    width: 100%;
+    min-height: 44px;
 }
 
 .btn, .nav-btn, .nav-item, .task-checkbox, .grocery-checkbox, .filter-chip, .segmented-btn {

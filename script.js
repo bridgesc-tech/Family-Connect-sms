@@ -74,6 +74,7 @@ class FamilyConnect {
                             if (data.members) this.members = data.members;
                             if (data.weekMenu) this.weekMenu = this.normalizeWeekMenu(data.weekMenu);
                             this.ensureMemberColors();
+                            this.persistMenuIfNeeded();
                             this.saveToLocalStorage();
                             this.refreshVisible();
                             this.updateMemberSelects();
@@ -113,6 +114,7 @@ class FamilyConnect {
                     this.weekMenu = this.normalizeWeekMenu(data.weekMenu);
                     this.ensureMemberColors();
                     this.saveToLocalStorage();
+                    this.persistMenuIfNeeded();
                     return;
                 }
             } catch (error) {
@@ -132,6 +134,7 @@ class FamilyConnect {
         this.members = storedMembers ? JSON.parse(storedMembers) : [];
         this.weekMenu = this.normalizeWeekMenu(storedMenu ? JSON.parse(storedMenu) : null);
         this.ensureMemberColors();
+        this.persistMenuIfNeeded();
     }
 
     saveData() {
@@ -352,6 +355,21 @@ class FamilyConnect {
         });
     }
 
+    thisWeekEndKey() {
+        const today = this.startOfDay(new Date());
+        const weekEnd = new Date(today);
+        weekEnd.setDate(today.getDate() + (6 - today.getDay()));
+        return this.dinnerDateKey(weekEnd);
+    }
+
+    persistMenuIfNeeded() {
+        this.pruneWeekMenu();
+        if (!this._menuNeedsPersist) return;
+        this._menuNeedsPersist = false;
+        localStorage.setItem('familyConnectMenuRollFix', '1');
+        this.saveData();
+    }
+
     normalizeWeekMenu(data) {
         const menu = {};
         if (!data || typeof data !== 'object' || Array.isArray(data)) return menu;
@@ -361,12 +379,27 @@ class FamilyConnect {
                 menu[key] = data[key];
             }
         });
+        const today = this.startOfDay(new Date());
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay());
+        const weekEndKey = this.thisWeekEndKey();
         if (hasOldKeys) {
-            this.getRollingDinnerDates().forEach((date) => {
+            this.weekDays.forEach((day, index) => {
+                const date = new Date(weekStart);
+                date.setDate(weekStart.getDate() + index);
+                if (date < today) return;
                 const key = this.dinnerDateKey(date);
-                const weekday = this.weekDays[date.getDay()];
-                if (!menu[key] && data[weekday]) menu[key] = data[weekday];
+                if (!menu[key] && data[day] && data[day].trim()) {
+                    menu[key] = data[day];
+                }
             });
+        }
+        const pruneRollover = hasOldKeys || !localStorage.getItem('familyConnectMenuRollFix');
+        if (pruneRollover) {
+            Object.keys(menu).forEach((key) => {
+                if (key > weekEndKey) delete menu[key];
+            });
+            this._menuNeedsPersist = true;
         }
         return menu;
     }
@@ -2125,7 +2158,7 @@ class UpdateManager {
                 this.updateAvailable = true;
                 this.showUpdateBanner();
                 if (updateStatusText) {
-                    updateStatusText.textContent = 'Update available! See banner at top.';
+                    updateStatusText.textContent = 'Update available! Choose Update or Later.';
                     updateStatusText.style.color = 'var(--primary-color)';
                 }
             } else {
@@ -2201,6 +2234,12 @@ class UpdateManager {
         const banner = document.getElementById('updateBanner');
         if (banner) {
             banner.classList.remove('hidden');
+            document.body.classList.add('update-modal-open');
+            Array.from(document.body.children).forEach((el) => {
+                if (el !== banner) el.inert = true;
+            });
+            const updateBtn = document.getElementById('updateNowBtn');
+            if (updateBtn) updateBtn.focus();
         }
         const updateBtnText = document.getElementById('updateBtnText');
         if (updateBtnText) {
@@ -2217,6 +2256,10 @@ class UpdateManager {
         if (banner) {
             banner.classList.add('hidden');
         }
+        document.body.classList.remove('update-modal-open');
+        Array.from(document.body.children).forEach((el) => {
+            el.inert = false;
+        });
     }
     
     async applyUpdate() {
