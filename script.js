@@ -324,73 +324,116 @@ class FamilyConnect {
     }
 
     emptyWeekMenu() {
-        return {
-            sunday: '',
-            monday: '',
-            tuesday: '',
-            wednesday: '',
-            thursday: '',
-            friday: '',
-            saturday: ''
-        };
+        return {};
+    }
+
+    dinnerDateKey(date) {
+        return this.formatDateInput(this.startOfDay(date));
+    }
+
+    getRollingDinnerDates() {
+        const today = this.startOfDay(new Date());
+        return Array.from({ length: 7 }, (_, index) => {
+            const date = new Date(today);
+            date.setDate(today.getDate() + index);
+            return date;
+        });
+    }
+
+    pruneWeekMenu() {
+        const todayKey = this.dinnerDateKey(new Date());
+        Object.keys(this.weekMenu).forEach((key) => {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(key) && key < todayKey) {
+                delete this.weekMenu[key];
+            }
+            if (this.weekDays.includes(key)) {
+                delete this.weekMenu[key];
+            }
+        });
     }
 
     normalizeWeekMenu(data) {
-        const menu = this.emptyWeekMenu();
-        if (!data || typeof data !== 'object') return menu;
-        this.weekDays.forEach((day) => {
-            if (typeof data[day] === 'string') menu[day] = data[day];
+        const menu = {};
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return menu;
+        const hasOldKeys = this.weekDays.some((day) => typeof data[day] === 'string' && data[day].trim());
+        Object.keys(data).forEach((key) => {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(key) && typeof data[key] === 'string' && data[key].trim()) {
+                menu[key] = data[key];
+            }
         });
+        if (hasOldKeys) {
+            this.getRollingDinnerDates().forEach((date) => {
+                const key = this.dinnerDateKey(date);
+                const weekday = this.weekDays[date.getDay()];
+                if (!menu[key] && data[weekday]) menu[key] = data[weekday];
+            });
+        }
         return menu;
     }
 
-    getCurrentWeekDates() {
-        const today = this.startOfDay(new Date());
-        const sunday = new Date(today);
-        sunday.setDate(today.getDate() - today.getDay());
-        return this.weekDays.map((day, index) => {
-            const date = new Date(sunday);
-            date.setDate(sunday.getDate() + index);
-            return { day, date };
-        });
-    }
-
     setupMenu() {
-        this.weekDays.forEach((day) => {
-            const input = document.getElementById(`menu-${day}`);
-            if (!input) return;
-            input.addEventListener('input', () => {
-                this.weekMenu[day] = input.value;
-                this.saveData();
-            });
+        const list = document.getElementById('menuDays');
+        list.addEventListener('input', (e) => {
+            const input = e.target;
+            if (!input || !input.dataset.date) return;
+            const value = input.value;
+            if (value.trim()) this.weekMenu[input.dataset.date] = value;
+            else delete this.weekMenu[input.dataset.date];
+            this.saveData();
         });
 
         document.getElementById('clearMenuBtn').addEventListener('click', () => {
-            if (!this.weekDays.some((day) => this.weekMenu[day].trim())) return;
-            if (!confirm('Clear dinners for every day this week?')) return;
-            this.weekMenu = this.emptyWeekMenu();
+            const dates = this.getRollingDinnerDates().map((date) => this.dinnerDateKey(date));
+            if (!dates.some((key) => (this.weekMenu[key] || '').trim())) return;
+            if (!confirm('Clear dinners for these 7 days?')) return;
+            dates.forEach((key) => delete this.weekMenu[key]);
             this.saveData();
             this.renderMenu();
         });
     }
 
     renderMenu() {
-        const week = this.getCurrentWeekDates();
+        const list = document.getElementById('menuDays');
+        const dates = this.getRollingDinnerDates();
         const rangeEl = document.getElementById('menuWeekRange');
-        if (rangeEl && week.length === 7) {
-            rangeEl.textContent = `${this.formatDateShort(week[0].date)} – ${this.formatDateShort(week[6].date)}`;
+        if (rangeEl) {
+            rangeEl.textContent = `${this.formatDateShort(dates[0])} – ${this.formatDateShort(dates[6])}`;
         }
 
-        const todayKey = this.weekDays[new Date().getDay()];
-        week.forEach(({ day, date }) => {
-            const row = document.querySelector(`.menu-row[data-day="${day}"]`);
-            const dateLabel = document.querySelector(`[data-date-for="${day}"]`);
-            const input = document.getElementById(`menu-${day}`);
-            if (row) row.classList.toggle('is-today', day === todayKey);
-            if (dateLabel) dateLabel.textContent = this.formatDateShort(date);
-            if (input && document.activeElement !== input) {
-                input.value = this.weekMenu[day] || '';
-            }
+        const focusedDate = list.contains(document.activeElement) ? document.activeElement.dataset.date : null;
+        if (focusedDate) return;
+
+        this.pruneWeekMenu();
+        list.innerHTML = '';
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        dates.forEach((date, index) => {
+            const key = this.dinnerDateKey(date);
+            const row = document.createElement('label');
+            row.className = 'menu-row' + (index === 0 ? ' is-today' : '');
+            row.dataset.day = dayNames[date.getDay()].toLowerCase();
+
+            const dayWrap = document.createElement('span');
+            dayWrap.className = 'menu-row-day';
+            const name = document.createElement('span');
+            name.className = 'menu-day-name';
+            name.textContent = index === 0 ? 'Today' : dayNames[date.getDay()];
+            const dateLabel = document.createElement('span');
+            dateLabel.className = 'menu-day-date';
+            dateLabel.textContent = this.formatDateShort(date);
+            dayWrap.appendChild(name);
+            dayWrap.appendChild(dateLabel);
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.maxLength = 200;
+            input.placeholder = 'Add dinner';
+            input.autocomplete = 'off';
+            input.dataset.date = key;
+            input.value = this.weekMenu[key] || '';
+
+            row.appendChild(dayWrap);
+            row.appendChild(input);
+            list.appendChild(row);
         });
     }
 
@@ -946,8 +989,7 @@ class FamilyConnect {
         const section = document.createElement('div');
         section.className = 'glance-section';
         const header = document.createElement('h3');
-        const todayKey = this.weekDays[new Date().getDay()];
-        const dinner = (this.weekMenu[todayKey] || '').trim();
+        const dinner = (this.weekMenu[this.dinnerDateKey(new Date())] || '').trim();
         header.textContent = 'Dinner';
         section.appendChild(header);
         const item = document.createElement('div');
