@@ -16,25 +16,33 @@
     --text-secondary: #6B7280;
     --border-color: #E5E7EB;
     --nav-height: 68px;
-    --screen-inset: 8px;
+    --screen-inset-top: 48px;
+    --screen-inset-bottom: 4px;
+    --screen-inset-side: 8px;
     --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
     --shadow-hover: 0 6px 18px rgba(15, 23, 42, 0.12);
 }
 
 html {
     height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background: var(--bg-color);
     min-height: 100dvh;
-    padding-top: max(var(--screen-inset), env(safe-area-inset-top, 0px));
-    padding-right: max(var(--screen-inset), env(safe-area-inset-right, 0px));
-    padding-bottom: calc(var(--nav-height) + var(--screen-inset) + 12px + env(safe-area-inset-bottom, 0px));
-    padding-left: max(var(--screen-inset), env(safe-area-inset-left, 0px));
+    padding-top: max(var(--screen-inset-top), env(safe-area-inset-top, 0px));
+    padding-right: max(var(--screen-inset-side), env(safe-area-inset-right, 0px));
+    padding-bottom: calc(var(--nav-height) + var(--screen-inset-bottom) + 12px + env(safe-area-inset-bottom, 0px));
+    padding-left: max(var(--screen-inset-side), env(safe-area-inset-left, 0px));
     color: var(--text-primary);
     overflow-x: hidden;
+}
+
+input, textarea, select {
+    font-size: 16px;
 }
 
 .container {
@@ -87,9 +95,9 @@ body {
 
 .bottom-nav {
     position: fixed;
-    left: max(var(--screen-inset), env(safe-area-inset-left, 0px));
-    right: max(var(--screen-inset), env(safe-area-inset-right, 0px));
-    bottom: calc(var(--screen-inset) + env(safe-area-inset-bottom, 0px));
+    left: max(var(--screen-inset-side), env(safe-area-inset-left, 0px));
+    right: max(var(--screen-inset-side), env(safe-area-inset-right, 0px));
+    bottom: calc(var(--screen-inset-bottom) + env(safe-area-inset-bottom, 0px));
     height: var(--nav-height);
     background: var(--card-bg);
     border-radius: 18px;
@@ -340,59 +348,64 @@ body {
     flex-shrink: 0;
 }
 
-.menu-days {
+.menu-list {
+    background: var(--card-bg);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.menu-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.menu-row:last-child {
+    border-bottom: none;
+}
+
+.menu-row.is-today {
+    background: #EEF1FF;
+}
+
+.menu-row-day {
+    width: 72px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-}
-
-.menu-day {
-    display: block;
-    background: var(--card-bg);
-    border-radius: 12px;
-    padding: 12px;
-    box-shadow: var(--shadow);
-    border-left: 4px solid var(--border-color);
-}
-
-.menu-day.is-today {
-    border-left-color: var(--primary-color);
-    box-shadow: 0 0 0 1px rgba(91, 108, 255, 0.2), var(--shadow);
-}
-
-.menu-day-label {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 1px;
 }
 
 .menu-day-name {
     font-weight: 700;
-    font-size: 15px;
+    font-size: 13px;
 }
 
 .menu-day-date {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-secondary);
 }
 
-.menu-day textarea {
-    width: 100%;
-    border: 2px solid var(--border-color);
-    border-radius: 8px;
-    padding: 10px;
+.menu-row input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    padding: 6px 0;
     font-size: 16px;
     font-family: inherit;
-    resize: vertical;
-    min-height: 52px;
-    background: white;
+    color: var(--text-primary);
 }
 
-.menu-day textarea:focus {
+.menu-row input:focus {
     outline: none;
-    border-color: var(--primary-color);
+}
+
+.menu-row input::placeholder {
+    color: #B0B7C3;
 }
 
 .tasks-list,
@@ -403,6 +416,10 @@ body {
     margin-bottom: 16px;
 }
 
+.groceries-list {
+    gap: 6px;
+}
+
 .task-card,
 .grocery-card {
     background: var(--card-bg);
@@ -410,6 +427,12 @@ body {
     padding: 14px;
     box-shadow: var(--shadow);
     border-left: 4px solid var(--primary-color);
+}
+
+.grocery-card {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border-left-width: 3px;
 }
 
 .task-card.completed,
@@ -433,12 +456,22 @@ body {
     margin-bottom: 6px;
 }
 
+.grocery-header {
+    align-items: center;
+    margin-bottom: 0;
+}
+
 .task-title,
 .grocery-title {
     font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
     flex: 1;
+}
+
+.grocery-title {
+    font-size: 15px;
+    font-weight: 500;
 }
 
 .task-checkbox,
@@ -453,6 +486,12 @@ body {
     justify-content: center;
     flex-shrink: 0;
     margin-left: 10px;
+}
+
+.grocery-checkbox {
+    width: 22px;
+    height: 22px;
+    margin-left: 8px;
 }
 
 .task-checkbox.checked,
@@ -560,6 +599,22 @@ body {
     border-color: var(--primary-color);
 }
 
+.date-range-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.grocery-delete-btn {
+    background: none;
+    border: none;
+    font-size: 15px;
+    cursor: pointer;
+    padding: 2px 4px;
+    margin-left: 4px;
+    opacity: 0.55;
+}
+
 .time-row {
     display: flex;
     gap: 8px;
@@ -576,6 +631,7 @@ body {
 }
 
 .input-group input {
+    font-size: 16px;
     flex: 1;
 }
 

@@ -195,7 +195,7 @@ class FamilyConnect {
     
     setupDateInputs() {
         // Prevent typing in date inputs, but allow calendar picker to open
-        const dateInputs = ['eventDateInput', 'taskDueDateInput'];
+        const dateInputs = ['eventDateInput', 'eventEndDateInput', 'taskDueDateInput'];
         
         dateInputs.forEach(inputId => {
             const input = document.getElementById(inputId);
@@ -383,7 +383,7 @@ class FamilyConnect {
 
         const todayKey = this.weekDays[new Date().getDay()];
         week.forEach(({ day, date }) => {
-            const row = document.querySelector(`.menu-day[data-day="${day}"]`);
+            const row = document.querySelector(`.menu-row[data-day="${day}"]`);
             const dateLabel = document.querySelector(`[data-date-for="${day}"]`);
             const input = document.getElementById(`menu-${day}`);
             if (row) row.classList.toggle('is-today', day === todayKey);
@@ -777,7 +777,9 @@ class FamilyConnect {
         heading.textContent = periodTitle;
         glanceContent.appendChild(heading);
         
-        glanceContent.appendChild(this.renderGlanceDinners());
+        if (this.glancePeriod === 'day') {
+            glanceContent.appendChild(this.renderGlanceDinners());
+        }
         
         const periodEvents = this.getEventsInRange(startDate, endDate);
         
@@ -816,7 +818,7 @@ class FamilyConnect {
                 eventItem.style.borderLeftColor = this.getMemberColor(event.assignee);
                 
                 const eventDate = event.occurrenceDate;
-                const dateStr = this.formatDateWithDay(eventDate);
+                const dateStr = this.formatEventRange(event, eventDate);
                 
                 const eventTitle = document.createElement('div');
                 eventTitle.className = 'glance-item-title';
@@ -944,62 +946,25 @@ class FamilyConnect {
         const section = document.createElement('div');
         section.className = 'glance-section';
         const header = document.createElement('h3');
-        const week = this.getCurrentWeekDates();
         const todayKey = this.weekDays[new Date().getDay()];
-
-        const goToMenu = () => {
+        const dinner = (this.weekMenu[todayKey] || '').trim();
+        header.textContent = 'Dinner';
+        section.appendChild(header);
+        const item = document.createElement('div');
+        item.className = 'glance-item';
+        const title = document.createElement('div');
+        title.className = 'glance-item-title';
+        title.textContent = dinner || 'Nothing planned';
+        const meta = document.createElement('div');
+        meta.className = 'glance-item-meta';
+        meta.textContent = dinner ? 'Tonight' : 'Tap to add tonight\'s dinner';
+        item.appendChild(title);
+        item.appendChild(meta);
+        item.addEventListener('click', () => {
             const menuBtn = document.querySelector('.nav-item[data-tab="menu"]');
             if (menuBtn) menuBtn.click();
-        };
-
-        if (this.glancePeriod === 'day') {
-            const dinner = (this.weekMenu[todayKey] || '').trim();
-            header.textContent = 'Dinner';
-            section.appendChild(header);
-            const item = document.createElement('div');
-            item.className = 'glance-item';
-            const title = document.createElement('div');
-            title.className = 'glance-item-title';
-            title.textContent = dinner || 'Nothing planned';
-            const meta = document.createElement('div');
-            meta.className = 'glance-item-meta';
-            meta.textContent = dinner ? 'Tonight' : 'Tap to add tonight\'s dinner';
-            item.appendChild(title);
-            item.appendChild(meta);
-            item.addEventListener('click', goToMenu);
-            section.appendChild(item);
-            return section;
-        }
-
-        const planned = this.weekDays.filter((day) => (this.weekMenu[day] || '').trim());
-        header.textContent = `Dinners (${planned.length})`;
-        section.appendChild(header);
-        if (planned.length === 0) {
-            const empty = document.createElement('p');
-            empty.className = 'glance-empty';
-            empty.textContent = 'No dinners planned this week';
-            section.appendChild(empty);
-            section.addEventListener('click', goToMenu);
-            return section;
-        }
-
-        week.forEach(({ day, date }) => {
-            const dinner = (this.weekMenu[day] || '').trim();
-            if (!dinner) return;
-            const item = document.createElement('div');
-            item.className = 'glance-item';
-            if (day === todayKey) item.style.borderLeftColor = 'var(--primary-color)';
-            const title = document.createElement('div');
-            title.className = 'glance-item-title';
-            title.textContent = dinner;
-            const meta = document.createElement('div');
-            meta.className = 'glance-item-meta';
-            meta.textContent = this.formatDateWithDay(date);
-            item.appendChild(title);
-            item.appendChild(meta);
-            item.addEventListener('click', goToMenu);
-            section.appendChild(item);
         });
+        section.appendChild(item);
         return section;
     }
 
@@ -1040,8 +1005,14 @@ class FamilyConnect {
                 
                 const eventDetails = document.createElement('div');
                 eventDetails.className = 'event-details';
+
+                if (event.endDate) {
+                    const rangeSpan = document.createElement('div');
+                    rangeSpan.className = 'event-time';
+                    rangeSpan.textContent = this.formatEventRange(event, this.parseEventDate(event.date));
+                    eventDetails.appendChild(rangeSpan);
+                }
                 
-                // Check if event has a time component
                 const hasTime = event.date.includes('T') || event.date.includes(':');
                 if (hasTime) {
                     const eventDateTime = this.parseEventDate(event.date);
@@ -1117,6 +1088,9 @@ class FamilyConnect {
                 
                 const eventDate = this.parseEventDate(event.date);
                 document.getElementById('eventDateInput').value = this.formatDateInput(eventDate);
+                document.getElementById('eventEndDateInput').value = event.endDate
+                    ? this.formatDateInput(this.parseEventDate(event.endDate))
+                    : '';
                 
                 // Check if event has time component
                 const hasTime = event.date.includes('T') || (event.date.includes(':') && !event.date.match(/^\d{4}-\d{2}-\d{2}$/));
@@ -1146,6 +1120,7 @@ class FamilyConnect {
             document.getElementById('eventModalTitle').textContent = 'Add Event';
             document.getElementById('eventTitleInput').value = '';
             document.getElementById('eventDateInput').value = date ? this.formatDateInput(date) : '';
+            document.getElementById('eventEndDateInput').value = '';
             document.getElementById('eventHourInput').value = '';
             document.getElementById('eventMinuteInput').value = '';
             document.getElementById('eventAmPmInput').value = '';
@@ -1175,6 +1150,7 @@ class FamilyConnect {
     saveEvent() {
         const title = document.getElementById('eventTitleInput').value.trim();
         const date = document.getElementById('eventDateInput').value;
+        const endDateInput = document.getElementById('eventEndDateInput').value;
         const hour = document.getElementById('eventHourInput').value;
         const minute = document.getElementById('eventMinuteInput').value;
         const ampm = document.getElementById('eventAmPmInput').value;
@@ -1211,18 +1187,28 @@ class FamilyConnect {
             const localDate = new Date(year, month - 1, day, hours, minutes);
             eventDate = localDate.toISOString();
         } else {
-            // Just store the date string (no time component)
             eventDate = date;
+        }
+
+        let endDate = null;
+        if (endDateInput) {
+            if (endDateInput < date) {
+                alert('End date must be on or after the start date');
+                return;
+            }
+            if (endDateInput !== date) {
+                endDate = endDateInput;
+            }
         }
         
         if (this.editingEventId) {
-            // Update existing event
             const eventIndex = this.events.findIndex(e => e.id === this.editingEventId);
             if (eventIndex !== -1) {
                 this.events[eventIndex] = {
                     ...this.events[eventIndex],
                     title,
                     date: eventDate,
+                    endDate,
                     description: description || null,
                     repeat,
                     assignee: assignee || null
@@ -1234,6 +1220,7 @@ class FamilyConnect {
                 id: Date.now().toString(),
                 title,
                 date: eventDate,
+                endDate,
                 description: description || null,
                 repeat,
                 assignee: assignee || null,
@@ -1519,26 +1506,16 @@ class FamilyConnect {
         
         const groceryHeader = document.createElement('div');
         groceryHeader.className = 'grocery-header';
-        groceryHeader.style.cssText = 'display: flex; align-items: center; justify-content: space-between;';
         
         const groceryTitle = document.createElement('div');
         groceryTitle.className = 'grocery-title';
         groceryTitle.textContent = grocery.item;
-        groceryTitle.style.cssText = 'flex: 1; font-size: 16px; font-weight: 500; color: var(--text-primary);';
-        if (grocery.checked) {
-            groceryTitle.style.cssText += 'text-decoration: line-through; opacity: 0.6;';
-        }
         
         const groceryCheckbox = document.createElement('div');
         groceryCheckbox.className = 'grocery-checkbox';
-        groceryCheckbox.style.cssText = 'width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--border-color); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s; flex-shrink: 0;';
-        
         if (grocery.checked) {
             groceryCheckbox.classList.add('checked');
             groceryCheckbox.textContent = '✓';
-            groceryCheckbox.style.cssText += 'background: var(--success-color); border-color: var(--success-color); color: white;';
-        } else {
-            groceryCheckbox.style.cssText += 'background: white;';
         }
         
         groceryCheckbox.addEventListener('click', (e) => {
@@ -1548,19 +1525,12 @@ class FamilyConnect {
         
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'grocery-delete-btn';
-        deleteBtn.textContent = '🗑️';
-        deleteBtn.style.cssText = 'background: none; border: none; font-size: 18px; cursor: pointer; padding: 5px; margin-left: 10px; opacity: 0.6; transition: opacity 0.3s;';
+        deleteBtn.textContent = '✕';
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (confirm('Delete this item from the grocery list?')) {
                 this.deleteGrocery(grocery.id);
             }
-        });
-        deleteBtn.addEventListener('mouseenter', () => {
-            deleteBtn.style.opacity = '1';
-        });
-        deleteBtn.addEventListener('mouseleave', () => {
-            deleteBtn.style.opacity = '0.6';
         });
         
         groceryHeader.appendChild(groceryTitle);
@@ -1568,17 +1538,6 @@ class FamilyConnect {
         groceryHeader.appendChild(deleteBtn);
         
         groceryCard.appendChild(groceryHeader);
-        groceryCard.style.cssText = 'background: var(--card-bg); border-radius: 12px; padding: 15px; margin-bottom: 10px; box-shadow: var(--shadow); transition: transform 0.2s;';
-        
-        groceryCard.addEventListener('mouseenter', () => {
-            if (!grocery.checked) {
-                groceryCard.style.transform = 'translateY(-2px)';
-            }
-        });
-        groceryCard.addEventListener('mouseleave', () => {
-            groceryCard.style.transform = 'translateY(0)';
-        });
-        
         container.appendChild(groceryCard);
     }
 
@@ -1884,7 +1843,15 @@ class FamilyConnect {
         return new Date(date.getFullYear(), date.getMonth(), date.getDate());
     }
 
-    eventOccursOn(event, date) {
+    eventSpanDays(event) {
+        if (!event.endDate) return 0;
+        const start = this.startOfDay(this.parseEventDate(event.date));
+        const end = this.startOfDay(this.parseEventDate(event.endDate));
+        const days = Math.round((end - start) / 86400000);
+        return days > 0 ? days : 0;
+    }
+
+    isOccurrenceStart(event, date) {
         const eventDate = this.startOfDay(this.parseEventDate(event.date));
         const target = this.startOfDay(date);
         if (target < eventDate) return false;
@@ -1901,6 +1868,26 @@ class FamilyConnect {
         return false;
     }
 
+    eventOccursOn(event, date) {
+        const target = this.startOfDay(date);
+        const span = this.eventSpanDays(event);
+        for (let i = 0; i <= span; i++) {
+            const maybeStart = new Date(target);
+            maybeStart.setDate(maybeStart.getDate() - i);
+            if (this.isOccurrenceStart(event, maybeStart)) return true;
+        }
+        return false;
+    }
+
+    formatEventRange(event, occurrenceDate) {
+        const start = this.startOfDay(occurrenceDate || this.parseEventDate(event.date));
+        const span = this.eventSpanDays(event);
+        if (span <= 0) return this.formatDateWithDay(start);
+        const end = new Date(start);
+        end.setDate(end.getDate() + span);
+        return `${this.formatDateWithDay(start)} – ${this.formatDateShort(end)}`;
+    }
+
     getEventsForDate(date) {
         return this.events.filter(event => this.eventOccursOn(event, date));
     }
@@ -1911,8 +1898,11 @@ class FamilyConnect {
         const results = [];
         this.events.forEach(event => {
             const cursor = this.startOfDay(this.parseEventDate(event.date));
+            const span = this.eventSpanDays(event);
             if (!event.repeat || event.repeat === 'none') {
-                if (cursor >= start && cursor <= end) {
+                const spanEnd = new Date(cursor);
+                spanEnd.setDate(spanEnd.getDate() + span);
+                if (spanEnd >= start && cursor <= end) {
                     results.push({ ...event, occurrenceDate: cursor });
                 }
                 return;
@@ -1920,7 +1910,9 @@ class FamilyConnect {
             let day = new Date(cursor);
             let guard = 0;
             while (day <= end && guard < 400) {
-                if (day >= start && this.eventOccursOn(event, day)) {
+                const spanEnd = new Date(day);
+                spanEnd.setDate(spanEnd.getDate() + span);
+                if (spanEnd >= start && day <= end && this.isOccurrenceStart(event, day)) {
                     results.push({ ...event, occurrenceDate: new Date(day) });
                 }
                 if (event.repeat === 'weekly') day.setDate(day.getDate() + 7);

@@ -92,7 +92,7 @@
         <div class="tab-content" id="groceriesTab">
             <div class="panel-card">
                 <div class="input-group">
-                    <input type="text" id="groceryItemInput" placeholder="Add an item" maxlength="100">
+                    <input type="text" id="groceryItemInput" placeholder="Add an item" maxlength="100" autocomplete="off">
                     <button class="btn btn-primary" id="addGroceryBtn">Add</button>
                 </div>
                 <button id="clearCheckedBtn" class="btn btn-secondary clear-checked-btn" style="display: none;">Clear purchased</button>
@@ -112,55 +112,55 @@
                 </div>
                 <button id="clearMenuBtn" class="btn btn-secondary">Clear week</button>
             </div>
-            <div class="menu-days" id="menuDays">
-                <label class="menu-day" data-day="sunday">
-                    <span class="menu-day-label">
+            <div class="menu-list" id="menuDays">
+                <label class="menu-row" data-day="sunday">
+                    <span class="menu-row-day">
                         <span class="menu-day-name">Sunday</span>
                         <span class="menu-day-date" data-date-for="sunday"></span>
                     </span>
-                    <textarea id="menu-sunday" rows="2" maxlength="200" placeholder="What's for dinner?"></textarea>
+                    <input type="text" id="menu-sunday" maxlength="200" placeholder="Add dinner" autocomplete="off">
                 </label>
-                <label class="menu-day" data-day="monday">
-                    <span class="menu-day-label">
+                <label class="menu-row" data-day="monday">
+                    <span class="menu-row-day">
                         <span class="menu-day-name">Monday</span>
                         <span class="menu-day-date" data-date-for="monday"></span>
                     </span>
-                    <textarea id="menu-monday" rows="2" maxlength="200" placeholder="What's for dinner?"></textarea>
+                    <input type="text" id="menu-monday" maxlength="200" placeholder="Add dinner" autocomplete="off">
                 </label>
-                <label class="menu-day" data-day="tuesday">
-                    <span class="menu-day-label">
+                <label class="menu-row" data-day="tuesday">
+                    <span class="menu-row-day">
                         <span class="menu-day-name">Tuesday</span>
                         <span class="menu-day-date" data-date-for="tuesday"></span>
                     </span>
-                    <textarea id="menu-tuesday" rows="2" maxlength="200" placeholder="What's for dinner?"></textarea>
+                    <input type="text" id="menu-tuesday" maxlength="200" placeholder="Add dinner" autocomplete="off">
                 </label>
-                <label class="menu-day" data-day="wednesday">
-                    <span class="menu-day-label">
+                <label class="menu-row" data-day="wednesday">
+                    <span class="menu-row-day">
                         <span class="menu-day-name">Wednesday</span>
                         <span class="menu-day-date" data-date-for="wednesday"></span>
                     </span>
-                    <textarea id="menu-wednesday" rows="2" maxlength="200" placeholder="What's for dinner?"></textarea>
+                    <input type="text" id="menu-wednesday" maxlength="200" placeholder="Add dinner" autocomplete="off">
                 </label>
-                <label class="menu-day" data-day="thursday">
-                    <span class="menu-day-label">
+                <label class="menu-row" data-day="thursday">
+                    <span class="menu-row-day">
                         <span class="menu-day-name">Thursday</span>
                         <span class="menu-day-date" data-date-for="thursday"></span>
                     </span>
-                    <textarea id="menu-thursday" rows="2" maxlength="200" placeholder="What's for dinner?"></textarea>
+                    <input type="text" id="menu-thursday" maxlength="200" placeholder="Add dinner" autocomplete="off">
                 </label>
-                <label class="menu-day" data-day="friday">
-                    <span class="menu-day-label">
+                <label class="menu-row" data-day="friday">
+                    <span class="menu-row-day">
                         <span class="menu-day-name">Friday</span>
                         <span class="menu-day-date" data-date-for="friday"></span>
                     </span>
-                    <textarea id="menu-friday" rows="2" maxlength="200" placeholder="What's for dinner?"></textarea>
+                    <input type="text" id="menu-friday" maxlength="200" placeholder="Add dinner" autocomplete="off">
                 </label>
-                <label class="menu-day" data-day="saturday">
-                    <span class="menu-day-label">
+                <label class="menu-row" data-day="saturday">
+                    <span class="menu-row-day">
                         <span class="menu-day-name">Saturday</span>
                         <span class="menu-day-date" data-date-for="saturday"></span>
                     </span>
-                    <textarea id="menu-saturday" rows="2" maxlength="200" placeholder="What's for dinner?"></textarea>
+                    <input type="text" id="menu-saturday" maxlength="200" placeholder="Add dinner" autocomplete="off">
                 </label>
             </div>
         </div>
@@ -229,9 +229,15 @@
                     <label for="eventTitleInput">Event Title</label>
                     <input type="text" id="eventTitleInput" placeholder="Enter event title" maxlength="50">
                 </div>
-                <div class="form-group">
-                    <label for="eventDateInput">Date</label>
-                    <input type="date" id="eventDateInput">
+                <div class="date-range-row">
+                    <div class="form-group">
+                        <label for="eventDateInput">Starts</label>
+                        <input type="date" id="eventDateInput">
+                    </div>
+                    <div class="form-group">
+                        <label for="eventEndDateInput">Ends</label>
+                        <input type="date" id="eventEndDateInput">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Time (optional)</label>
