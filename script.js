@@ -18,6 +18,8 @@ class FamilyConnect {
         this.currentTab = 'glance';
         this.taskFilter = 'all';
         this.saveTimer = null;
+        this.cloudHydrated = false;
+        this._unsubscribeSnapshot = null;
         this.memberColors = ['#5B6CFF', '#14B8A6', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
         ['familyConnectVercelUrl', 'familyConnectApiKey', 'familyConnectDailyDigest', 'familyConnectScheduledReminders'].forEach((key) => {
             localStorage.removeItem(key);
@@ -36,8 +38,9 @@ class FamilyConnect {
     }
 
     waitForFirebase(callback, attempts = 0) {
-        const maxAttempts = 20;
-        if (typeof firebase !== 'undefined' || attempts >= maxAttempts) {
+        const maxAttempts = 40;
+        const authUser = typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser;
+        if ((typeof db !== 'undefined' && db && authUser) || attempts >= maxAttempts) {
             callback();
         } else {
             setTimeout(() => {
@@ -61,26 +64,18 @@ class FamilyConnect {
             if (typeof window !== 'undefined' && typeof db !== 'undefined' && db !== null) {
                 this.firebaseEnabled = true;
                 console.log('Firebase sync enabled for family:', this.familyId);
-                
-                // Listen for real-time updates
-                db.collection('families').doc(this.familyId)
+                if (this._unsubscribeSnapshot) this._unsubscribeSnapshot();
+                this._unsubscribeSnapshot = db.collection('families').doc(this.familyId)
                     .onSnapshot((docSnapshot) => {
-                        if (docSnapshot.exists) {
-                            const data = docSnapshot.data();
-                            
-                            if (data.events) this.events = data.events;
-                            if (data.tasks) this.tasks = data.tasks;
-                            if (data.groceries) this.groceries = data.groceries;
-                            if (data.members) this.members = data.members;
-                            if (data.weekMenu) this.weekMenu = this.normalizeWeekMenu(data.weekMenu);
-                            this.ensureMemberColors();
-                            this.persistMenuIfNeeded();
-                            this.saveToLocalStorage();
-                            this.refreshVisible();
-                            this.updateMemberSelects();
-                            this.renderTaskFilters();
-                            console.log('Synced from cloud');
-                        }
+                        if (!docSnapshot.exists) return;
+                        this.applyCloudData(docSnapshot.data());
+                        this.ensureMemberColors();
+                        this.persistMenuIfNeeded();
+                        this.saveToLocalStorage();
+                        this.refreshVisible();
+                        this.updateMemberSelects();
+                        this.renderTaskFilters();
+                        console.log('Synced from cloud');
                     }, (error) => {
                         console.error('Firebase sync error:', error);
                     });
@@ -106,23 +101,24 @@ class FamilyConnect {
             try {
                 const docSnapshot = await db.collection('families').doc(this.familyId).get();
                 if (docSnapshot.exists) {
-                    const data = docSnapshot.data();
-                    this.events = data.events || [];
-                    this.tasks = data.tasks || [];
-                    this.groceries = data.groceries || [];
-                    this.members = data.members || [];
-                    this.weekMenu = this.normalizeWeekMenu(data.weekMenu);
+                    this.applyCloudData(docSnapshot.data());
                     this.ensureMemberColors();
                     this.saveToLocalStorage();
                     this.persistMenuIfNeeded();
                     return;
                 }
+                this.loadFromLocalStorage();
+                this.cloudHydrated = true;
+                return;
             } catch (error) {
                 console.error('Error loading from Firebase:', error);
+                if (this.cloudHydrated) return;
             }
         }
-        
-        // Fall back to localStorage
+        this.loadFromLocalStorage();
+    }
+
+    loadFromLocalStorage() {
         const storedEvents = localStorage.getItem('familyConnectEvents');
         const storedTasks = localStorage.getItem('familyConnectTasks');
         const storedGroceries = localStorage.getItem('familyConnectGroceries');
@@ -137,14 +133,50 @@ class FamilyConnect {
         this.persistMenuIfNeeded();
     }
 
+    isEmptyPayload(data) {
+        if (!data || typeof data !== 'object') return true;
+        const menu = data.weekMenu && typeof data.weekMenu === 'object' && !Array.isArray(data.weekMenu)
+            ? data.weekMenu
+            : {};
+        return !(data.events && data.events.length)
+            && !(data.tasks && data.tasks.length)
+            && !(data.groceries && data.groceries.length)
+            && !(data.members && data.members.length)
+            && !Object.keys(menu).length;
+    }
+
+    hasContent() {
+        return this.events.length > 0
+            || this.tasks.length > 0
+            || this.groceries.length > 0
+            || this.members.length > 0
+            || Object.keys(this.weekMenu || {}).length > 0;
+    }
+
+    applyCloudData(data) {
+        if (!data) return;
+        if (this.isEmptyPayload(data) && this.hasContent()) {
+            this.cloudHydrated = true;
+            this.saveData();
+            return;
+        }
+        if (data.events) this.events = data.events;
+        if (data.tasks) this.tasks = data.tasks;
+        if (data.groceries) this.groceries = data.groceries;
+        if (data.members) this.members = data.members;
+        if (data.weekMenu) this.weekMenu = this.normalizeWeekMenu(data.weekMenu);
+        this.cloudHydrated = true;
+    }
+
     saveData() {
         this.saveToLocalStorage();
-        if (!this.firebaseEnabled) return;
+        if (!this.firebaseEnabled || !this.cloudHydrated) return;
         clearTimeout(this.saveTimer);
         this.saveTimer = setTimeout(() => this.flushSave(), 400);
     }
 
     flushSave() {
+        if (!this.firebaseEnabled || !this.cloudHydrated) return;
         this.events = this.events.map(({ reminders, ...event }) => event);
         this.tasks = this.tasks.map(({ reminders, ...task }) => task);
         const payload = {
@@ -1827,8 +1859,11 @@ class FamilyConnect {
                         alert('Family ID must be exactly 6 digits');
                         return;
                     }
-                    if (confirm('This will connect to a different family. All local data will sync with the new family. Continue?')) {
+                    if (confirm('Connect this phone to that family? This phone will show their calendar, lists, and dinners.')) {
                         localStorage.setItem('familyConnectFamilyId', newFamilyId);
+                        ['familyConnectEvents', 'familyConnectTasks', 'familyConnectGroceries', 'familyConnectMembers', 'familyConnectWeekMenu'].forEach((key) => {
+                            localStorage.removeItem(key);
+                        });
                         this.familyId = newFamilyId;
                         document.getElementById('familyIdDisplay').value = newFamilyId;
                         familyIdInput.value = '';
