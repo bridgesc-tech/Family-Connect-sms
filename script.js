@@ -885,10 +885,6 @@ class FamilyConnect {
         heading.textContent = periodTitle;
         glanceContent.appendChild(heading);
         
-        if (this.glancePeriod === 'day') {
-            glanceContent.appendChild(this.renderGlanceDinners());
-        }
-        
         const periodEvents = this.getEventsInRange(startDate, endDate);
         
         // Filter tasks for the period (includes tasks with due dates in range or no due date)
@@ -960,6 +956,10 @@ class FamilyConnect {
         }
         
         glanceContent.appendChild(eventsSection);
+
+        if (this.glancePeriod === 'day') {
+            glanceContent.appendChild(this.renderGlanceDinners());
+        }
         
         // Tasks section
         const tasksSection = document.createElement('div');
