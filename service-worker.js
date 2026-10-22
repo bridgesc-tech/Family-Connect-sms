@@ -1,11 +1,12 @@
 // Update this version number when you deploy a new version
-const APP_VERSION = '1.5.4';
+const APP_VERSION = '1.5.5';
 const CACHE_NAME = `family-connect-${APP_VERSION}`;
 const urlsToCache = [
   './',
   './index.html',
   './styles.css',
   './script.js',
+  './firebase-config.js',
   './manifest.json'
 ];
 

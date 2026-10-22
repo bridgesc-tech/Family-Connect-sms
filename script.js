@@ -20,33 +20,101 @@ class FamilyConnect {
         this.saveTimer = null;
         this.cloudHydrated = false;
         this._unsubscribeSnapshot = null;
+        this._initialized = false;
+        this._snapshotRetries = 0;
         this.memberColors = ['#5B6CFF', '#14B8A6', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
         ['familyConnectVercelUrl', 'familyConnectApiKey', 'familyConnectDailyDigest', 'familyConnectScheduledReminders'].forEach((key) => {
             localStorage.removeItem(key);
         });
-        
-        // Wait for Firebase scripts to load
-        this.waitForFirebase(() => {
-            this.initializeFirebase();
-            this.loadData().then(() => {
-                this.initializeApp();
-            }).catch(error => {
-                console.error('Error loading data:', error);
-                this.initializeApp();
-            });
+        this.loadFromLocalStorage();
+        this.start();
+    }
+
+    hasAuthUser() {
+        try {
+            return !!(typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    waitForFirebase() {
+        return new Promise((resolve) => {
+            let settled = false;
+            let interval;
+            const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                clearInterval(interval);
+                window.removeEventListener('firebaseReady', onReady);
+                resolve(value);
+            };
+            const onReady = () => {
+                if (typeof db !== 'undefined' && db && this.hasAuthUser()) finish(true);
+            };
+            onReady();
+            if (settled) return;
+            window.addEventListener('firebaseReady', onReady);
+            interval = setInterval(onReady, 200);
+            setTimeout(() => finish(!!(typeof db !== 'undefined' && db && this.hasAuthUser())), 20000);
         });
     }
 
-    waitForFirebase(callback, attempts = 0) {
-        const maxAttempts = 40;
-        const authUser = typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser;
-        if ((typeof db !== 'undefined' && db && authUser) || attempts >= maxAttempts) {
-            callback();
-        } else {
-            setTimeout(() => {
-                this.waitForFirebase(callback, attempts + 1);
-            }, 100);
+    async start() {
+        this.initializeAppOnce();
+        this.updateSyncStatus();
+        const ready = await this.waitForFirebase();
+        if (!ready) {
+            this.firebaseEnabled = false;
+            this.updateSyncStatus();
+            return;
         }
+        this.firebaseEnabled = true;
+        this.listenForCloud();
+        try {
+            await this.fetchCloudData();
+        } catch (error) {
+            console.error('Error loading from Firebase:', error);
+        }
+        this.updateSyncStatus();
+        this.refreshVisible();
+        this.updateMemberSelects();
+        this.renderTaskFilters();
+    }
+
+    initializeAppOnce() {
+        if (this._initialized) return;
+        this._initialized = true;
+        this.initializeApp();
+    }
+
+    listenForCloud() {
+        if (!db || !this.familyId || !this.hasAuthUser()) return;
+        if (this._unsubscribeSnapshot) {
+            this._unsubscribeSnapshot();
+            this._unsubscribeSnapshot = null;
+        }
+        this._unsubscribeSnapshot = db.collection('families').doc(this.familyId)
+            .onSnapshot((docSnapshot) => {
+                this._snapshotRetries = 0;
+                if (!docSnapshot.exists) return;
+                this.applyCloudData(docSnapshot.data());
+                this.ensureMemberColors();
+                this.persistMenuIfNeeded();
+                this.saveToLocalStorage();
+                this.refreshVisible();
+                this.updateMemberSelects();
+                this.renderTaskFilters();
+                this.updateSyncStatus();
+                console.log('Synced from cloud');
+            }, (error) => {
+                console.error('Firebase sync error:', error);
+                if (this._snapshotRetries >= 5) return;
+                this._snapshotRetries += 1;
+                setTimeout(() => {
+                    if (this.hasAuthUser()) this.listenForCloud();
+                }, 1000 * this._snapshotRetries);
+            });
     }
 
     getOrCreateFamilyId() {
@@ -59,63 +127,23 @@ class FamilyConnect {
         return familyId;
     }
 
-    initializeFirebase() {
-        const checkFirebase = () => {
-            if (typeof window !== 'undefined' && typeof db !== 'undefined' && db !== null) {
-                this.firebaseEnabled = true;
-                console.log('Firebase sync enabled for family:', this.familyId);
-                if (this._unsubscribeSnapshot) this._unsubscribeSnapshot();
-                this._unsubscribeSnapshot = db.collection('families').doc(this.familyId)
-                    .onSnapshot((docSnapshot) => {
-                        if (!docSnapshot.exists) return;
-                        this.applyCloudData(docSnapshot.data());
-                        this.ensureMemberColors();
-                        this.persistMenuIfNeeded();
-                        this.saveToLocalStorage();
-                        this.refreshVisible();
-                        this.updateMemberSelects();
-                        this.renderTaskFilters();
-                        console.log('Synced from cloud');
-                    }, (error) => {
-                        console.error('Firebase sync error:', error);
-                    });
-                
-                this.updateSyncStatus();
-                return true;
-            }
-            return false;
-        };
-        
-        if (!checkFirebase()) {
-            setTimeout(() => {
-                if (!checkFirebase()) {
-                    console.log('Firebase not configured - running in local-only mode');
-                    this.updateSyncStatus();
-                }
-            }, 500);
+    async fetchCloudData() {
+        if (!this.firebaseEnabled || !db || !this.hasAuthUser()) return;
+        const timeout = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Family data timed out')), 10000);
+        });
+        const docSnapshot = await Promise.race([
+            db.collection('families').doc(this.familyId).get(),
+            timeout
+        ]);
+        if (docSnapshot.exists) {
+            this.applyCloudData(docSnapshot.data());
+            this.ensureMemberColors();
+            this.saveToLocalStorage();
+            this.persistMenuIfNeeded();
+            return;
         }
-    }
-
-    async loadData() {
-        if (this.firebaseEnabled) {
-            try {
-                const docSnapshot = await db.collection('families').doc(this.familyId).get();
-                if (docSnapshot.exists) {
-                    this.applyCloudData(docSnapshot.data());
-                    this.ensureMemberColors();
-                    this.saveToLocalStorage();
-                    this.persistMenuIfNeeded();
-                    return;
-                }
-                this.loadFromLocalStorage();
-                this.cloudHydrated = true;
-                return;
-            } catch (error) {
-                console.error('Error loading from Firebase:', error);
-                if (this.cloudHydrated) return;
-            }
-        }
-        this.loadFromLocalStorage();
+        this.cloudHydrated = true;
     }
 
     loadFromLocalStorage() {
@@ -1889,14 +1917,16 @@ class FamilyConnect {
 
     updateSyncStatus() {
         const statusEl = document.getElementById('syncStatus');
-        if (statusEl) {
-            if (this.firebaseEnabled) {
-                statusEl.textContent = 'Syncing across devices';
-                statusEl.style.color = 'var(--success-color)';
-            } else {
-                statusEl.textContent = 'Saved on this device only';
-                statusEl.style.color = 'var(--text-secondary)';
-            }
+        if (!statusEl) return;
+        if (this.firebaseEnabled && this.cloudHydrated) {
+            statusEl.textContent = 'Syncing across devices';
+            statusEl.style.color = 'var(--success-color)';
+        } else if (this.firebaseEnabled) {
+            statusEl.textContent = 'Connecting to family...';
+            statusEl.style.color = 'var(--warning-color)';
+        } else {
+            statusEl.textContent = 'Saved on this device only';
+            statusEl.style.color = 'var(--text-secondary)';
         }
     }
 

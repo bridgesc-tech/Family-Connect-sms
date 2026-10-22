@@ -10,46 +10,64 @@ const firebaseConfig = {
     appId: "1:836553253045:web:e93f536adf7afbbced5efc"
 };
 
-// Initialize Firebase (only if Firebase scripts are loaded)
 let db = null;
 
-async function initializeFirebaseIfReady() {
-    if (typeof firebase !== 'undefined' && window.location.protocol !== 'file:') {
-        try {
-            console.log('Initializing Firebase for Family Connect...');
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore();
-            
-            // Authenticate with anonymous auth (required for Firestore security rules)
-            const auth = firebase.auth();
-            try {
-                const userCredential = await auth.signInAnonymously();
-                console.log('Authenticated anonymously:', userCredential.user.uid);
-            } catch (authError) {
-                console.error('Error authenticating:', authError);
-                const currentUser = auth.currentUser;
-                if (!currentUser) {
-                    console.warn('Could not authenticate with Firebase. Some features may not work.');
-                }
-            }
-            
-            console.log('Firebase initialized successfully, db:', db);
-            window.dispatchEvent(new CustomEvent('firebaseReady'));
-        } catch (error) {
-            console.error('Firebase initialization error:', error);
-        }
-    } else {
-        if (window.location.protocol === 'file:') {
-            console.log('Running from file:// - Firebase disabled');
-        } else {
-            if (typeof firebase === 'undefined') {
-                setTimeout(initializeFirebaseIfReady, 100);
-            }
-        }
+function notifyFirebaseReady() {
+    window.dispatchEvent(new CustomEvent('firebaseReady'));
+}
+
+async function signInWithRetry(auth, attempts = 0) {
+    if (auth.currentUser) return auth.currentUser;
+    try {
+        const result = await auth.signInAnonymously();
+        return result.user;
+    } catch (error) {
+        console.error('Error authenticating:', error);
+        if (attempts >= 4) return auth.currentUser;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempts + 1)));
+        return signInWithRetry(auth, attempts + 1);
     }
 }
 
-// Try to initialize immediately, or wait for scripts
+async function initializeFirebaseIfReady() {
+    if (typeof firebase === 'undefined') {
+        if (window.location.protocol !== 'file:') {
+            setTimeout(initializeFirebaseIfReady, 100);
+        }
+        return;
+    }
+    if (window.location.protocol === 'file:') {
+        console.log('Running from file:// - Firebase disabled');
+        return;
+    }
+
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+        try {
+            db.settings({ experimentalAutoDetectLongPolling: true });
+        } catch (settingsError) {
+            console.warn('Could not set Firestore polling:', settingsError);
+        }
+
+        const auth = firebase.auth();
+        auth.onAuthStateChanged((user) => {
+            if (user) notifyFirebaseReady();
+        });
+        const user = await signInWithRetry(auth);
+        if (user) {
+            console.log('Authenticated anonymously:', user.uid);
+            notifyFirebaseReady();
+        } else {
+            console.warn('Could not authenticate with Firebase. Some features may not work.');
+        }
+    } catch (error) {
+        console.error('Firebase initialization error:', error);
+    }
+}
+
 if (typeof firebase !== 'undefined' && window.location.protocol !== 'file:') {
     initializeFirebaseIfReady();
 } else if (window.location.protocol !== 'file:') {
@@ -57,4 +75,3 @@ if (typeof firebase !== 'undefined' && window.location.protocol !== 'file:') {
 } else {
     console.log('Running from file:// - Firebase disabled');
 }
-
