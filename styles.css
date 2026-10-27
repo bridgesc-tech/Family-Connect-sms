@@ -104,7 +104,7 @@ input, textarea, select {
     position: relative;
     flex: none;
     height: var(--nav-height);
-    margin-bottom: calc(var(--screen-inset-bottom) + env(safe-area-inset-bottom, 0px));
+    margin-bottom: max(2px, calc(env(safe-area-inset-bottom, 0px) - 32px));
     background: var(--card-bg);
     border-radius: 18px;
     box-shadow: 0 4px 18px rgba(15, 23, 42, 0.14);
