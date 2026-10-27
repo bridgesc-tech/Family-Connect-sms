@@ -32,13 +32,15 @@ html {
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background: var(--bg-color);
-    min-height: 100dvh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
     padding-top: max(var(--screen-inset-top), env(safe-area-inset-top, 0px));
     padding-right: max(var(--screen-inset-side), env(safe-area-inset-right, 0px));
-    padding-bottom: calc(var(--nav-height) + var(--screen-inset-bottom) + 12px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: 0;
     padding-left: max(var(--screen-inset-side), env(safe-area-inset-left, 0px));
     color: var(--text-primary);
-    overflow-x: hidden;
+    overflow: hidden;
 }
 
 input, textarea, select {
@@ -46,8 +48,13 @@ input, textarea, select {
 }
 
 .container {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
     max-width: 520px;
     margin: 0 auto;
+    overflow-y: auto;
+    padding-bottom: 12px;
 }
 
 .app-header {
@@ -94,11 +101,10 @@ input, textarea, select {
 }
 
 .bottom-nav {
-    position: fixed;
-    left: max(var(--screen-inset-side), env(safe-area-inset-left, 0px));
-    right: max(var(--screen-inset-side), env(safe-area-inset-right, 0px));
-    bottom: calc(var(--screen-inset-bottom) + env(safe-area-inset-bottom, 0px));
+    position: relative;
+    flex: none;
     height: var(--nav-height);
+    margin-bottom: calc(var(--screen-inset-bottom) + env(safe-area-inset-bottom, 0px));
     background: var(--card-bg);
     border-radius: 18px;
     box-shadow: 0 4px 18px rgba(15, 23, 42, 0.14);
