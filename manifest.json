@@ -2,7 +2,7 @@
   "name": "Family Connect",
   "short_name": "Family Connect",
   "description": "Family calendar and shared to-do list",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",

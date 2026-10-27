@@ -811,6 +811,10 @@ input, textarea, select {
     color: var(--text-secondary);
 }
 
+.glance-item-description {
+    margin-top: 6px;
+}
+
 .members-list {
     display: flex;
     flex-direction: column;

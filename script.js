@@ -965,15 +965,14 @@ class FamilyConnect {
                     eventMeta.textContent += ` at ${timeStr}`;
                 }
                 
+                eventItem.appendChild(eventTitle);
+                eventItem.appendChild(eventMeta);
                 if (event.description) {
                     const eventDesc = document.createElement('div');
                     eventDesc.className = 'glance-item-description';
                     eventDesc.textContent = event.description;
                     eventItem.appendChild(eventDesc);
                 }
-                
-                eventItem.appendChild(eventTitle);
-                eventItem.appendChild(eventMeta);
                 
                 eventItem.addEventListener('click', () => {
                     this.openEventModal(null, event.id);
@@ -1057,15 +1056,14 @@ class FamilyConnect {
                     taskMeta.style.color = 'var(--text-secondary)';
                 }
                 
+                taskItem.appendChild(taskTitle);
+                taskItem.appendChild(taskMeta);
                 if (task.description) {
                     const taskDesc = document.createElement('div');
                     taskDesc.className = 'glance-item-description';
                     taskDesc.textContent = task.description;
                     taskItem.appendChild(taskDesc);
                 }
-                
-                taskItem.appendChild(taskTitle);
-                taskItem.appendChild(taskMeta);
                 
                 taskItem.addEventListener('click', () => {
                     this.openTaskModal(task.id);
